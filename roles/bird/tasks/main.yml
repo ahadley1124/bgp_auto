@@ -1,0 +1,14 @@
+- name: Build BGP peer list
+  ansible.builtin.set_fact:
+    bgp_peers: "{{ (groups['router'] | default([])) | difference([inventory_hostname]) }}"
+
+- name: Deploy BIRD config
+  ansible.builtin.template:
+    src: bird.conf.j2
+    dest: /etc/bird/bird.conf
+    mode: '0644'
+
+- name: Restart BIRD
+  ansible.builtin.systemd:
+    name: bird
+    state: restarted

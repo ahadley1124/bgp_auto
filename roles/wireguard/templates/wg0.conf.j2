@@ -1,0 +1,13 @@
+[Interface]
+Address = {{ loopback_ip }}/32
+PrivateKey = {{ wg_private_key }}
+ListenPort = {{ wg_port }}
+
+{% for peer in wg_peers %}
+[Peer]
+PublicKey = {{ hostvars[peer].wg_public_key | default(hostvars[peer].netbox_cf_wg_public_key) }}
+Endpoint = {{ hostvars[peer].ansible_host }}:{{ wg_port }}
+AllowedIPs = {{ hostvars[peer].loopback_ip }}/32
+PersistentKeepalive = 25
+
+{% endfor %}

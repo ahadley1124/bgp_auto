@@ -1,0 +1,16 @@
+- hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Install packages
+      ansible.builtin.apt:
+        name:
+          - wireguard
+          - bird2
+        state: present
+        update_cache: true
+
+  roles:
+    - wireguard
+    - bird
