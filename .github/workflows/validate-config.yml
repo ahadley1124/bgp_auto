@@ -1,0 +1,29 @@
+name: Validate Ansible Config
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  ansible-syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Ansible
+        run: pip install "ansible-core==2.17.*"
+
+      - name: Validate playbook syntax
+        run: ansible-playbook --syntax-check -i localhost, playbooks/deploy.yml
