@@ -5,7 +5,7 @@ protocol direct {}
 
 protocol kernel {
     persist;
-    scan time 20;
+    scan time 20 s;
 }
 
 protocol bfd {
@@ -20,8 +20,8 @@ protocol ospf v2 {
     area 0 {
         interface "wg*" {
             type pointopoint;
-            hello 1;
-            dead 4;
+            hello 1 s;
+            dead 4 s;
         };
     };
 }
