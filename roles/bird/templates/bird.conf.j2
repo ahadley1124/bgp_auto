@@ -5,7 +5,7 @@ protocol direct {}
 
 protocol kernel {
     persist;
-    scan time 20 s;
+    scan time 20;
 }
 
 protocol bfd {
@@ -20,14 +20,14 @@ protocol ospf v2 {
     area 0 {
         interface "wg*" {
             type pointopoint;
-            hello 1 s;
-            dead 4 s;
+            hello 1;
+            dead 4;
         };
     };
 }
 
 {% for peer in bgp_peers %}
-protocol bgp bgp_{{ peer | replace('.', '_') | replace('-', '_') }} {
+protocol bgp bgp_{{ peer | regex_replace('[^A-Za-z0-9_]', '_') }} {
     local as {{ bgp_as }};
     neighbor {{ hostvars[peer].loopback_ip }} as {{ bgp_as }};
     source address {{ loopback_ip }};
