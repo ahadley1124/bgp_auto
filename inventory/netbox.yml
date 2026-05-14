@@ -1,7 +1,7 @@
 plugin: netbox.netbox.nb_inventory
 api_endpoint: "{{ lookup('env', 'NETBOX_URL') }}"
 token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
-validate_certs: false
+validate_certs: "{{ lookup('env', 'NETBOX_VALIDATE_CERTS') | default('true', true) | bool }}"
 
 group_by:
   - device_roles

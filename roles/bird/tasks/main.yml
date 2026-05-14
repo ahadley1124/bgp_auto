@@ -7,8 +7,9 @@
     src: bird.conf.j2
     dest: /etc/bird/bird.conf
     mode: '0644'
+  notify: Restart BIRD
 
-- name: Restart BIRD
+- name: Ensure BIRD is running
   ansible.builtin.systemd:
     name: bird
-    state: restarted
+    state: started

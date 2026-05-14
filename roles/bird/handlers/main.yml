@@ -1,0 +1,4 @@
+- name: Restart BIRD
+  ansible.builtin.systemd:
+    name: bird
+    state: restarted

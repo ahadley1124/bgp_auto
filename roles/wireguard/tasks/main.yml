@@ -11,14 +11,16 @@
   changed_when: true
 
 - name: Generate public key
-  ansible.builtin.shell: "echo '{{ wg_priv.stdout }}' | wg pubkey"
+  ansible.builtin.command: wg pubkey
+  args:
+    stdin: "{{ wg_priv.stdout }}"
   register: wg_pub
   when: wg_priv is changed
   changed_when: true
 
 - name: Update NetBox with WG keys
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_URL') }}/api/dcim/devices/{{ netbox_device_id | default(id) }}/"
+    url: "{{ lookup('env', 'NETBOX_URL') }}/api/dcim/devices/{{ netbox_device_id }}/"
     method: PATCH
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
@@ -44,9 +46,10 @@
     src: wg0.conf.j2
     dest: /etc/wireguard/wg0.conf
     mode: '0600'
+  notify: Restart WireGuard
 
 - name: Enable WireGuard
   ansible.builtin.systemd:
     name: wg-quick@wg0
     enabled: true
-    state: restarted
+    state: started
