@@ -27,7 +27,7 @@ protocol ospf v2 {
 }
 
 {% for peer in bgp_peers %}
-protocol bgp {{ peer }} {
+protocol bgp bgp_{{ peer | replace('.', '_') | replace('-', '_') }} {
     local as {{ bgp_as }};
     neighbor {{ hostvars[peer].loopback_ip }} as {{ bgp_as }};
     source address {{ loopback_ip }};
