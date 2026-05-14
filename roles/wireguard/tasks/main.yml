@@ -9,6 +9,7 @@
   register: wg_priv
   when: netbox_cf_wg_private_key is not defined or netbox_cf_wg_private_key == ""
   changed_when: true
+  no_log: true
 
 - name: Generate public key
   ansible.builtin.command: wg pubkey
@@ -17,6 +18,15 @@
   register: wg_pub
   when: wg_priv is changed
   changed_when: true
+  no_log: true
+
+- name: Validate NetBox credentials for key sync
+  ansible.builtin.assert:
+    that:
+      - lookup('env', 'NETBOX_URL') | length > 0
+      - lookup('env', 'NETBOX_TOKEN') | length > 0
+    fail_msg: NETBOX_URL and NETBOX_TOKEN must be set to sync WireGuard keys to NetBox.
+  when: wg_priv is changed
 
 - name: Update NetBox with WG keys
   ansible.builtin.uri:
@@ -31,11 +41,13 @@
         wg_private_key: "{{ wg_priv.stdout }}"
         wg_public_key: "{{ wg_pub.stdout }}"
   when: wg_priv is changed
+  no_log: true
 
 - name: Set WG keys
   ansible.builtin.set_fact:
     wg_private_key: "{{ netbox_cf_wg_private_key | default(wg_priv.stdout, true) }}"
     wg_public_key: "{{ netbox_cf_wg_public_key | default(wg_pub.stdout, true) }}"
+  no_log: true
 
 - name: Set peers
   ansible.builtin.set_fact:

@@ -12,4 +12,5 @@
 - name: Ensure BIRD is running
   ansible.builtin.systemd:
     name: bird
+    enabled: true
     state: started
