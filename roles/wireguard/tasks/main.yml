@@ -33,17 +33,29 @@
     netbox_api_url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}"
   when: wg_priv is changed
 
-- name: Determine NetBox device id for key sync
-  ansible.builtin.set_fact:
-    netbox_target_device_id: "{{ netbox_device_id | default(inventory_hostname) }}"
+- name: Query NetBox for device id by name
+  ansible.builtin.uri:
+    url: "{{ netbox_api_url }}/api/dcim/devices/?name={{ inventory_hostname }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
+    status_code: 200
+  register: netbox_device_query
   when: wg_priv is changed
 
-- name: Validate NetBox device id for key sync
+- name: Determine NetBox device id for key sync
+  ansible.builtin.set_fact:
+    netbox_target_device_id: "{{ netbox_device_query.json.results[0].id }}"
+  when: 
+    - wg_priv is changed
+    - netbox_device_query.json.results | length > 0
+
+- name: Validate NetBox device query result
   ansible.builtin.assert:
     that:
+      - netbox_device_query.json.results | length > 0
       - netbox_target_device_id is defined
-      - netbox_target_device_id | string | length > 0
-    fail_msg: netbox_device_id must be present from inventory to sync WireGuard keys (or inventory_hostname will be used as fallback).
+    fail_msg: "Device '{{ inventory_hostname }}' not found in NetBox."
   when: wg_priv is changed
 
 - name: Update NetBox with WG keys
