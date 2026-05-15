@@ -23,9 +23,14 @@
 - name: Validate NetBox credentials for key sync
   ansible.builtin.assert:
     that:
-      - lookup('env', 'NETBOX_URL') | length > 0
+      - (lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true)) | length > 0
       - lookup('env', 'NETBOX_TOKEN') | length > 0
-    fail_msg: NETBOX_URL and NETBOX_TOKEN must be set to sync WireGuard keys to NetBox.
+    fail_msg: NETBOX_API (or NETBOX_URL) and NETBOX_TOKEN must be set to sync WireGuard keys to NetBox.
+  when: wg_priv is changed
+
+- name: Set NetBox API endpoint for key sync
+  ansible.builtin.set_fact:
+    netbox_api_url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}"
   when: wg_priv is changed
 
 - name: Determine NetBox device id for key sync
@@ -43,7 +48,7 @@
 
 - name: Update NetBox with WG keys
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_URL') }}/api/dcim/devices/{{ netbox_target_device_id }}/"
+    url: "{{ netbox_api_url }}/api/dcim/devices/{{ netbox_target_device_id }}/"
     method: PATCH
     status_code:
       - 200

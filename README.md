@@ -7,6 +7,7 @@ This repository contains Ansible playbooks and roles to automate BGP and WireGua
 - **Ansible:** install a recent Ansible release (2.9+ recommended).
 - **Inventory:** configure `inventory/netbox.yml` or provide your own inventory file.
 - **Credentials & Access:** SSH access to target hosts and any required privilege escalation (sudo) credentials.
+- **NetBox:** set `NETBOX_API` and `NETBOX_TOKEN` in your environment for inventory access. The WireGuard sync role also accepts `NETBOX_URL` as a fallback.
 - **Variables:** adjust repo variables in `group_vars/all.yml` as needed.
 
 **Quick Start — run the playbook**
