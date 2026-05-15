@@ -1,16 +1,74 @@
-- name: Build BGP peer list
-  ansible.builtin.set_fact:
-    bgp_peers: "{{ (groups['router'] | default([])) | difference([inventory_hostname]) }}"
+- name: Ensure BIRD directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+  loop:
+    - /etc/bird
+    - /etc/bird/generated
 
-- name: Deploy BIRD config
-  ansible.builtin.template:
-    src: bird.conf.j2
-    dest: /etc/bird/bird.conf
-    mode: '0644'
-  notify: Restart BIRD
+# ---- Build topology ----
 
-- name: Ensure BIRD is running
-  ansible.builtin.systemd:
+- name: Build full node list
+  set_fact:
+    all_nodes: "{{ groups['router'] }}"
+
+- name: Build iBGP peer list (exclude self)
+  set_fact:
+    bgp_peers: "{{ all_nodes | difference([inventory_hostname]) }}"
+
+# ---- Optional: Route reflector logic ----
+
+- name: Identify route reflectors
+  set_fact:
+    route_reflectors: >-
+      {{ groups['router']
+         | map('extract', hostvars)
+         | selectattr('netbox_cf_bgp_role', 'equalto', 'rr')
+         | map(attribute='inventory_hostname')
+         | list }}
+
+- name: Select effective BGP peers
+  set_fact:
+    effective_bgp_peers: >-
+      {% if netbox_cf_bgp_role == "rr" %}
+        {{ bgp_peers }}
+      {% elif route_reflectors | length > 0 %}
+        {{ route_reflectors }}
+      {% else %}
+        {{ bgp_peers }}
+      {% endif %}
+
+# ---- Deploy configs ----
+
+- name: Deploy BGP (iBGP mesh / RR aware)
+  template:
+    src: ibgp.conf.j2
+    dest: /etc/bird/generated/ibgp.conf
+  notify: reload bird
+
+- name: Deploy OSPF
+  template:
+    src: ospf.conf.j2
+    dest: /etc/bird/generated/ospf.conf
+  notify: reload bird
+
+- name: Deploy BFD
+  template:
+    src: bfd.conf.j2
+    dest: /etc/bird/generated/bfd.conf
+  notify: reload bird
+
+# ---- Validate before reload ----
+
+- name: Validate BIRD config
+  command: bird -p -c /etc/bird/bird.conf
+  register: bird_check
+  changed_when: false
+  failed_when: bird_check.rc != 0
+
+# roles/bird/handlers/main.yml
+- name: reload bird
+  systemd:
     name: bird
-    enabled: true
-    state: started
+    state: reloaded

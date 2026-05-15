@@ -1,0 +1,19 @@
+# =====================================
+# AUTO-GENERATED OSPF UNDERLAY
+# =====================================
+
+protocol ospf v2 ospf_underlay {
+    ipv4 {
+        table master4;
+        import all;
+        export none;
+    };
+
+    area 0 {
+        interface "wg*" {
+            type pointopoint;
+            hello 1;
+            dead 4;
+        };
+    };
+}

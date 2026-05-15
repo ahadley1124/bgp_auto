@@ -1,0 +1,30 @@
+# =====================================
+# AUTO-GENERATED iBGP CONFIG
+# Loopback-based mesh / RR aware
+# =====================================
+
+{% for peer in effective_bgp_peers %}
+protocol bgp ibgp_{{ peer }} {
+    local as {{ bgp_as }};
+    neighbor {{ hostvars[peer].loopback_ip }} as {{ bgp_as }};
+    source address {{ loopback_ip }};
+    multihop;
+    bfd yes;
+
+    ipv4 {
+        table master4;
+        import all;
+        export all;
+    };
+
+    ipv6 {
+        table master6;
+        import all;
+        export all;
+    };
+
+    {% if netbox_cf_bgp_role == "rr" %}
+    rr client;
+    {% endif %}
+}
+{% endfor %}
