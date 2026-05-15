@@ -4,6 +4,7 @@ group_by:
   - device_roles
 
 compose:
+  ansible_user: custom_fields.ansible_user
   ansible_host: primary_ip.address | ipaddr('address')
   loopback_ip: interfaces | selectattr('name', 'equalto', 'lo') | map(attribute='ip_addresses') | first | default([]) | map(attribute='address') | first | default('') | ipaddr('address')
 
