@@ -35,7 +35,7 @@
 
 - name: Determine NetBox device id for key sync
   ansible.builtin.set_fact:
-    netbox_target_device_id: "{{ netbox_device_id | default(id, true) }}"
+    netbox_target_device_id: "{{ netbox_device_id | default(inventory_hostname) }}"
   when: wg_priv is changed
 
 - name: Validate NetBox device id for key sync
@@ -43,7 +43,7 @@
     that:
       - netbox_target_device_id is defined
       - netbox_target_device_id | string | length > 0
-    fail_msg: netbox_device_id (or id) must be present from inventory to sync WireGuard keys.
+    fail_msg: netbox_device_id must be present from inventory to sync WireGuard keys (or inventory_hostname will be used as fallback).
   when: wg_priv is changed
 
 - name: Update NetBox with WG keys
