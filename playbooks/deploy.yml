@@ -1,4 +1,4 @@
-- hosts: all
+- hosts: "{{ device_name | default('all') }}"
   become: true
   gather_facts: false
 
