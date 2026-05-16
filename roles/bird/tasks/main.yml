@@ -37,7 +37,7 @@
 - name: Select effective BGP peers
   set_fact:
     effective_bgp_peers: >-
-      {% if netbox_cf_bgp_role == "rr" %}
+      {% if netbox_cf_bgp_role | default('client') == "rr" %}
         {{ bgp_peers }}
       {% elif route_reflectors | length > 0 %}
         {{ route_reflectors }}
