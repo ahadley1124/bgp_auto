@@ -11,7 +11,13 @@
 
 - name: Build full node list
   set_fact:
-    all_nodes: "{{ groups['router'] }}"
+    all_nodes: >-
+      {{ hostvars
+         | dict2items
+         | selectattr('value.device_role', 'defined')
+         | selectattr('value.device_role.slug', 'equalto', 'router')
+         | map(attribute='key')
+         | list }}
 
 - name: Build iBGP peer list (exclude self)
   set_fact:
@@ -22,7 +28,7 @@
 - name: Identify route reflectors
   set_fact:
     route_reflectors: >-
-      {{ groups['router']
+      {{ all_nodes
          | map('extract', hostvars)
          | selectattr('netbox_cf_bgp_role', 'equalto', 'rr')
          | map(attribute='inventory_hostname')
