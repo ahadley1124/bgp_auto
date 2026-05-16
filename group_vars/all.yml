@@ -1,2 +1,3 @@
 bgp_as: 17290
 wg_port: 51820
+loopback_ip: "{{ netbox_cf_loopback_ip | ipaddr('address') }}"
