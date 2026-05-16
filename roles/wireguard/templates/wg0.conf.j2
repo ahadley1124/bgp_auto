@@ -1,13 +1,23 @@
 [Interface]
-Address = {{ loopback_ip }}/32
+{% set my_lb = hostvars[inventory_hostname].get('netbox_cf_loopback_ip') | default(hostvars[inventory_hostname].get('loopback_ip')) %}
+{% if my_lb %}
+Address = {{ my_lb | ipaddr('address') }}/32
+{% else %}
+# Warning: no loopback IP defined for {{ inventory_hostname }}
+{% endif %}
 PrivateKey = {{ wg_private_key }}
 ListenPort = {{ wg_listen_port }}
 
 {% for peer in wg_peers %}
 [Peer]
-PublicKey = {{ hostvars[peer].wg_public_key | default(hostvars[peer].netbox_cf_wg_public_key) }}
-Endpoint = {{ hostvars[peer].ansible_host }}:{{ wg_listen_port }}
-AllowedIPs = {{ hostvars[peer].loopback_ip }}/32
+PublicKey = {{ hostvars[peer].get('wg_public_key') | default(hostvars[peer].get('netbox_cf_wg_public_key')) }}
+Endpoint = {{ hostvars[peer].get('ansible_host') }}:{{ wg_listen_port }}
+{% set peer_lb = hostvars[peer].get('netbox_cf_loopback_ip') | default(hostvars[peer].get('loopback_ip')) %}
+{% if peer_lb %}
+AllowedIPs = {{ peer_lb | ipaddr('address') }}/32
+{% else %}
+# Warning: no loopback IP defined for peer {{ peer }}
+{% endif %}
 PersistentKeepalive = 25
 
 {% endfor %}
