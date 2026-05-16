@@ -4,6 +4,8 @@
 
   tasks:
     - name: Install packages
+      environment:
+        DEBIAN_FRONTEND: noninteractive
       ansible.builtin.apt:
         name:
           - wireguard
@@ -13,8 +15,6 @@
         install_recommends: no
         allow_unauthenticated: no
         cache_valid_time: 3600
-        environment:
-          DEBIAN_FRONTEND: noninteractive
 
   roles:
     - wireguard
