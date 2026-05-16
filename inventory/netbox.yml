@@ -6,6 +6,6 @@ group_by:
 compose:
   ansible_user: custom_fields.ansible_user
   ansible_host: primary_ip.address | ipaddr('address')
-  loopback_ip: custom_fields.loopback_ip | ipaddr('address')
+  loopback_ip: netbox_cf_loopback_ip | ipaddr('address')
 
 config_context: true
