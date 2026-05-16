@@ -2,8 +2,8 @@
 
 {% for peer in bgp_peers %}
 protocol bgp {{ peer }} {
-    local as {{ bgp_as }};
-    neighbor {{ hostvars[peer].loopback_ip }} as {{ bgp_as }};
+    local as {{ bgp_as | default(17290) }};
+    neighbor {{ hostvars[peer].loopback_ip }} as {{ bgp_as | default(17290) }};
     source address {{ loopback_ip }};
     multihop;
     bfd yes;
