@@ -89,7 +89,7 @@
 
 - name: Set WireGuard port
   ansible.builtin.set_fact:
-    wg_listen_port: "{{ wg_port_override | default(wg_port, true) }}"
+    wg_listen_port: "{{ wg_port_override | default(51820) }}"
 
 - name: Deploy WireGuard config
   ansible.builtin.template:
