@@ -8,7 +8,7 @@
 
 - name: Get loopback interface
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/dcim/interfaces/?device={{ inventory_hostname }}&name=lo"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/dcim/interfaces/?device={{ inventory_hostname | urlencode }}&name=lo"
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
   register: lo_iface
@@ -36,6 +36,7 @@
     body_format: json
     body:
       count: 2
+    return_content: true
   register: tunnel_a
   when: gre_tunnel_prefix_id is defined
 
@@ -48,18 +49,32 @@
     body_format: json
     body:
       count: 2
+    return_content: true
   register: tunnel_b
   when: gre_tunnel_prefix_id is defined
 
-- name: Set tunnel IP facts
+- name: Parse tunnel IP responses
   ansible.builtin.set_fact:
-    gre_a_local: "{{ tunnel_a.json[0].address }}"
-    gre_a_peer: "{{ tunnel_a.json[1].address }}"
-    gre_b_local: "{{ tunnel_b.json[0].address }}"
-    gre_b_peer: "{{ tunnel_b.json[1].address }}"
+    tunnel_a_ips: "{{ tunnel_a.json | default(tunnel_a.content | default('[]') | from_json) }}"
+    tunnel_b_ips: "{{ tunnel_b.json | default(tunnel_b.content | default('[]') | from_json) }}"
   when:
     - tunnel_a is succeeded
     - tunnel_b is succeeded
+
+- name: Set tunnel IP facts
+  ansible.builtin.set_fact:
+    gre_a_local: "{{ tunnel_a_ips[0].address }}"
+    gre_a_peer: "{{ tunnel_a_ips[1].address }}"
+    gre_b_local: "{{ tunnel_b_ips[0].address }}"
+    gre_b_peer: "{{ tunnel_b_ips[1].address }}"
+  when:
+    - tunnel_a_ips is defined
+    - tunnel_b_ips is defined
+    - tunnel_a_ips | length >= 2
+    - tunnel_b_ips | length >= 2
+  failed_when:
+    - tunnel_a_ips | length < 2
+    - tunnel_b_ips | length < 2
 
 # Configure loopback interface
 - name: Configure loopback interface
