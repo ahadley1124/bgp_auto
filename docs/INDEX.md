@@ -130,7 +130,7 @@ All configuration lives in NetBox custom fields:
 NetBox Device Custom Fields:
 ├── loopback_ip: "10.0.0.1"
 ├── bgp_role: "client"
-├── wg_peers: ["router02", "router03"]
+├── peers: ["router02", "router03"]
 ├── wg_private_key: "..." (auto-generated)
 └── wg_public_key: "..." (auto-generated)
          ↓

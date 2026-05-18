@@ -1,21 +1,6 @@
 - hosts: "{{ device_name | default('all') }}"
   become: true
   gather_facts: false
-
-  tasks:
-    - name: Install packages
-      environment:
-        DEBIAN_FRONTEND: noninteractive
-      ansible.builtin.apt:
-        name:
-          - wireguard
-        state: present
-        update_cache: true
-        dpkg_options: 'force-confdef,force-confold'
-        install_recommends: no
-        allow_unauthenticated: no
-        cache_valid_time: 3600
-
   roles:
     - bird
     - gre

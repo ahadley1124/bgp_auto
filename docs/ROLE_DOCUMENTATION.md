@@ -43,7 +43,7 @@ PersistentKeepalive = 25       # Keep connection alive
 **Required:**
 - `wg_port` — Listen port (default: 51820)
 - `netbox_cf_loopback_ip` — Router's loopback IP
-- `netbox_cf_wg_peers` — List of peer hostnames (from NetBox)
+- `netbox_cf_peers` — List of peer hostnames (from NetBox). The role will fall back to `netbox_cf_wg_peers` for backwards compatibility if `netbox_cf_peers` is not set.
 
 **Auto-Generated:**
 - `wg_private_key` — Generated if not in NetBox
@@ -79,8 +79,8 @@ PersistentKeepalive = 25       # Keep connection alive
 - Check NETBOX_TOKEN has device read/write permissions
 - Test: `curl "$NETBOX_API/api/dcim/devices/?name=router01"`
 
-**"No peers connecting"**
-- Verify `netbox_cf_wg_peers` is a valid JSON list: `["router02", "router03"]`
+- **"No peers connecting"**
+- Verify `netbox_cf_peers` (or legacy `netbox_cf_wg_peers`) is a valid JSON list: `["router02", "router03"]`
 - Check peer hostnames exist in inventory
 - Test connectivity: `ping <peer_endpoint>`
 

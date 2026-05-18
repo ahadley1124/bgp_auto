@@ -37,37 +37,24 @@ Custom fields store peer-specific configuration. Create these fields in NetBox:
 | **Description** | BGP role: `client` for full-mesh peers, `rr` for route reflector |
 
 ### Field 3: `wg_private_key`
+### Field 5: `peers` (WireGuard peer list)
 
 | Setting | Value |
 |---------|-------|
-| **Name** | `wg_private_key` |
-| **Content Type** | DCIM / Device |
-| **Type** | Text |
-| **Required** | No |
-| **Description** | WireGuard private key (auto-generated on first run) |
-
-### Field 4: `wg_public_key`
-
-| Setting | Value |
-|---------|-------|
-| **Name** | `wg_public_key` |
-| **Content Type** | DCIM / Device |
-| **Type** | Text |
-| **Required** | No |
-| **Description** | WireGuard public key (auto-generated on first run) |
-
-### Field 5: `wg_peers`
-
-| Setting | Value |
-|---------|-------|
-| **Name** | `wg_peers` |
+| **Name** | `peers` |
 | **Content Type** | DCIM / Device |
 | **Type** | Text (or JSON if available) |
 | **Required** | Yes (if WireGuard enabled) |
 | **Description** | JSON list of peer device names: `["router02", "router03"]` |
 
-### Field 6: `ospf_enabled` (Optional)
+Note: the playbook will read the `peers` custom field first. For backwards compatibility it will fall back to the legacy `wg_peers` field if `peers` is not present.
+| **Description** | JSON list of peer device names: `["router02", "router03"]` |
+### GRE (Optional)
 
+- **Input:** `loopback_ip`, `gre_tunnel_prefix_id` (NetBox prefix ID for tunnel IPs)
+- **Behavior:** Tunnel internal IP addresses are allocated from the NetBox prefix specified by `gre_tunnel_prefix_id` using NetBox's `available-ips` API. If the tunnel IPs do not already exist in NetBox, the playbook will request new IPs during deployment and use them for the GRE interfaces.
+- **Output:** Tunnel IPs (allocated and used at runtime)
+- **Generates:** GRE tunnel config
 | Setting | Value |
 |---------|-------|
 | **Name** | `ospf_enabled` |
@@ -145,7 +132,7 @@ For each router, create a device:
 **Custom Fields:**
 - `loopback_ip`: `10.0.0.1`
 - `bgp_role`: `client`
-- `wg_peers`: `["router02", "router03"]`
+- `peers`: `["router02", "router03"]`
 
 ### Example: Router 02
 
@@ -161,7 +148,7 @@ For each router, create a device:
 **Custom Fields:**
 - `loopback_ip`: `10.0.0.2`
 - `bgp_role`: `client`
-- `wg_peers`: `["router01", "router03"]`
+- `peers`: `["router01", "router03"]`
 
 ### Example: Router 03 (Route Reflector)
 
@@ -177,7 +164,7 @@ For each router, create a device:
 **Custom Fields:**
 - `loopback_ip`: `10.0.0.3`
 - `bgp_role`: `rr`
-- `wg_peers`: `["router01", "router02"]`
+- `peers`: `["router01", "router02"]`
 
 ## Step 7: Create Loopback Interfaces
 
@@ -225,7 +212,8 @@ compose:
   netbox_cf_bgp_role: netbox_cf_bgp_role
   netbox_cf_wg_private_key: netbox_cf_wg_private_key
   netbox_cf_wg_public_key: netbox_cf_wg_public_key
-  netbox_cf_wg_peers: netbox_cf_wg_peers
+  netbox_cf_peers: netbox_cf_peers
+  # Legacy compatibility: netbox_cf_wg_peers: netbox_cf_wg_peers
   netbox_cf_ospf_enabled: netbox_cf_ospf_enabled
 group_by:
   - device_role
@@ -274,7 +262,7 @@ Check that `wg_private_key` and `wg_public_key` are now populated.
 
 ### WireGuard
 
-- **Input:** `wg_private_key`, `wg_public_key`, `wg_peers`
+- **Input:** `wg_private_key`, `wg_public_key`, `peers` (or legacy `wg_peers`)
 - **Output:** `wg_private_key`, `wg_public_key` (synced on first run)
 - **Generates:** WireGuard config with peer list
 

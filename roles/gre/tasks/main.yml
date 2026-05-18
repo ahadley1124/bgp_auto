@@ -27,7 +27,8 @@
     headers:
       Authorization: "Token {{ netbox_token }}"
     body_format: json
-    body: {}
+    body:
+      count: 2
   register: tunnel_a
   when: gre_tunnel_prefix_id is defined
 
@@ -38,7 +39,8 @@
     headers:
       Authorization: "Token {{ netbox_token }}"
     body_format: json
-    body: {}
+    body:
+      count: 2
   register: tunnel_b
   when: gre_tunnel_prefix_id is defined
 

@@ -8,7 +8,7 @@ This guide provides step-by-step instructions for common tasks: adding routers, 
 |------|-------|------|
 | Add new router | 1–10 (Setup in NetBox) + 11–14 (Deploy) | ~30 min |
 | Change BGP role (client ↔ RR) | Update NetBox custom field + redeploy | ~5 min |
-| Add WireGuard peer | Add to `wg_peers` list in NetBox + redeploy | ~5 min |
+| Add WireGuard peer | Add to `peers` list in NetBox + redeploy | ~5 min |
 | Scale to 10+ routers | Use route reflector topology (Step 18) | depends |
 | Troubleshoot peer connection | Follow Troubleshooting section | ~15 min |
 
@@ -42,7 +42,7 @@ This guide provides step-by-step instructions for common tasks: adding routers, 
 2. Set:
    - **loopback_ip:** `10.0.0.4` (must be unique, from your prefix)
    - **bgp_role:** `client` (or `rr` for route reflector)
-   - **wg_peers:** `["router01", "router02", "router03"]` (JSON list)
+   - **peers:** `["router01", "router02", "router03"]` (JSON list; legacy `wg_peers` also accepted)
    - Leave **wg_private_key** and **wg_public_key** empty (auto-generated)
 3. Click **Save**
 
@@ -135,8 +135,8 @@ Expected output includes:
   "ansible_host": "10.x.x.x",
   "device_role": {"slug": "router"},
   "loopback_ip": "10.0.0.4",
-  "netbox_cf_bgp_role": "client",
-  "netbox_cf_wg_peers": ["router01", "router02", "router03"],
+   "netbox_cf_bgp_role": "client",
+   "netbox_cf_peers": ["router01", "router02", "router03"],
   ...
 }
 ```
@@ -317,15 +317,15 @@ router03–router10 → bgp_role: client
 
 For router01:
 - `bgp_role`: `rr`
-- `wg_peers`: `["router02", "router03", ..., "router10"]` (all others)
+- `peers`: `["router02", "router03", ..., "router10"]` (all others)
 
 For router02:
 - `bgp_role`: `rr`
-- `wg_peers`: `["router01", "router03", ..., "router10"]` (all others)
+- `peers`: `["router01", "router03", ..., "router10"]` (all others)
 
 For router03–router10:
 - `bgp_role`: `client`
-- `wg_peers`: `["router01", "router02"]` (RRs only)
+- `peers`: `["router01", "router02"]` (RRs only)
 
 **Step 3: Redeploy playbook**
 
@@ -362,7 +362,7 @@ sudo birdc show protocols
 **Step 1:** Update NetBox custom field
 
 1. Go to **Devices → router04**
-2. In Custom Fields, update **wg_peers**:
+2. In Custom Fields, update **peers**:
    - From: `["router01", "router02", "router03"]`
    - To: `["router01", "router02", "router03", "router05"]`
 3. Click **Save**
@@ -641,7 +641,7 @@ ansible-inventory -i inventory/netbox.yml --list | jq '.router04 | .netbox_cf_bg
 After deploying a new router:
 
 - [ ] Device created in NetBox with correct name
-- [ ] Custom fields filled in (loopback_ip, bgp_role, wg_peers)
+- [ ] Custom fields filled in (loopback_ip, bgp_role, peers)
 - [ ] Loopback interface created with IP address
 - [ ] SSH connectivity verified: `ssh ubuntu@<ip>`
 - [ ] Ansible inventory discovers device: `ansible-inventory ... --list`

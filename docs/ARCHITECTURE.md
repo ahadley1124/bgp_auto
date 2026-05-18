@@ -63,7 +63,8 @@ netbox_cf_loopback_ip: "10.0.0.1"
 netbox_cf_bgp_role: "client"                    # or "rr" for route reflector
 netbox_cf_wg_private_key: "..."
 netbox_cf_wg_public_key: "..."
-netbox_cf_wg_peers: ["router02", "router03"]   # List of peer hostnames
+netbox_cf_peers: ["router02", "router03"]   # List of peer hostnames (preferred)
+# Legacy: netbox_cf_wg_peers is also supported for compatibility
 netbox_cf_ospf_enabled: true
 ```
 
@@ -96,7 +97,7 @@ Each role generates configuration files from Jinja2 templates:
 **WireGuard Role:**
 - Generates or retrieves private/public key pair
 - Syncs keys back to NetBox custom fields
-- Builds [Peer] sections from `netbox_cf_wg_peers`
+-- Builds [Peer] sections from `netbox_cf_peers` (falls back to `netbox_cf_wg_peers`)
 
 **GRE Role (optional):**
 - Queries NetBox for tunnel prefix
@@ -146,7 +147,7 @@ Uses `--become` for privilege escalation and `--check` for dry-run mode.
    - `bgp_role`: `client` or `rr`
    - `wg_private_key`: Leave blank (auto-generated)
    - `wg_public_key`: Leave blank (auto-generated)
-   - `wg_peers`: `["router01", "router02", "router03"]`
+   - `peers`: `["router01", "router02", "router03"]`
 
 3. **Add loopback interface & IP:**
    - Interface name: `lo`
@@ -172,7 +173,7 @@ Uses `--become` for privilege escalation and `--check` for dry-run mode.
 | `bgp_role` | Text | No | `client` or `rr` | BGP role (client or route reflector) |
 | `wg_private_key` | Text | No | (auto-generated) | WireGuard private key |
 | `wg_public_key` | Text | No | (auto-generated) | WireGuard public key |
-| `wg_peers` | JSON | Yes | `["router02", "router03"]` | List of WireGuard peer names |
+| `peers` | JSON | Yes | `["router02", "router03"]` | List of WireGuard peer names (legacy `wg_peers` also accepted) |
 | `ospf_enabled` | Boolean | No | `true` | Enable OSPF on loopbacks |
 
 ## Common Scenarios
@@ -209,7 +210,7 @@ Current setup: router01, router02, router03
 Adding: router04
 
 1. Create device in NetBox
-2. Set custom fields (loopback_ip, wg_peers: [router01, router02, router03])
+2. Set custom fields (loopback_ip, peers: [router01, router02, router03])
 3. Run playbook on router04
 4. router04 auto-discovers peers via NetBox
 5. WireGuard keys auto-sync back to NetBox
@@ -228,7 +229,7 @@ Adding: router04
 - Verify BIRD config: `bird -p -c /etc/bird/bird.conf`
 
 ### WireGuard peers missing
-- Check `netbox_cf_wg_peers` custom field set on device
+- Check `netbox_cf_peers` (or legacy `netbox_cf_wg_peers`) custom field set on device
 - Verify referenced peers exist in NetBox
 - Confirm WireGuard public keys synced to NetBox after first run
 
