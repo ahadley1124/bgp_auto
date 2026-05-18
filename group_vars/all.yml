@@ -1,3 +1,7 @@
 bgp_as: 17290
 wg_port: 51820
 loopback_ip: "{{ netbox_cf_loopback_ip | ipaddr('address') }}"
+
+# NetBox configuration for GRE
+netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('http://netbox.local') }}"
+netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"

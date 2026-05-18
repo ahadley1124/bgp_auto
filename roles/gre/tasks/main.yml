@@ -1,0 +1,86 @@
+# Get loopback IP from NetBox
+- name: Get loopback interface
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/dcim/interfaces/?device={{ inventory_hostname }}&name=lo"
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+  register: lo_iface
+
+- name: Get loopback IP address
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/ipam/ip-addresses/?interface_id={{ lo_iface.json.results[0].id }}"
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+  register: lo_ip
+  when: lo_iface.json.results | length > 0
+
+- name: Set loopback IP fact
+  ansible.builtin.set_fact:
+    gre_loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
+  when: lo_ip.json.results | length > 0
+
+# Allocate tunnel IP addresses from NetBox
+- name: Allocate tunnel IP pair A
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/ipam/prefixes/{{ gre_tunnel_prefix_id }}/available-ips/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body: {}
+  register: tunnel_a
+  when: gre_tunnel_prefix_id is defined
+
+- name: Allocate tunnel IP pair B
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/ipam/prefixes/{{ gre_tunnel_prefix_id }}/available-ips/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    body_format: json
+    body: {}
+  register: tunnel_b
+  when: gre_tunnel_prefix_id is defined
+
+- name: Set tunnel IP facts
+  ansible.builtin.set_fact:
+    gre_a_local: "{{ tunnel_a.json[0].address }}"
+    gre_a_peer: "{{ tunnel_a.json[1].address }}"
+    gre_b_local: "{{ tunnel_b.json[0].address }}"
+    gre_b_peer: "{{ tunnel_b.json[1].address }}"
+  when:
+    - tunnel_a is succeeded
+    - tunnel_b is succeeded
+
+# Configure loopback interface
+- name: Configure loopback interface
+  ansible.builtin.shell: |
+    ip addr add {{ gre_loopback_ip }}/32 dev lo || true
+    ip link set lo up
+  when: gre_loopback_ip is defined
+  changed_when: true
+
+# Configure GRE tunnels
+- name: Configure GRE tunnel A
+  ansible.builtin.shell: |
+    ip tunnel add gre-a mode gre local {{ gre_loopback_ip }} remote {{ hostvars[gre_peer_name]['gre_loopback_ip'] }} ttl 255 || true
+    ip addr add {{ gre_a_local }} dev gre-a || true
+    ip link set gre-a up
+  when:
+    - gre_loopback_ip is defined
+    - gre_peer_name is defined
+    - gre_a_local is defined
+  changed_when: true
+  notify: Restart GRE tunnels
+
+- name: Configure GRE tunnel B
+  ansible.builtin.shell: |
+    ip tunnel add gre-b mode gre local {{ gre_loopback_ip }} remote {{ hostvars[gre_peer_name]['gre_loopback_ip'] }} ttl 255 || true
+    ip addr add {{ gre_b_local }} dev gre-b || true
+    ip link set gre-b up
+  when:
+    - gre_loopback_ip is defined
+    - gre_peer_name is defined
+    - gre_b_local is defined
+  changed_when: true
+  notify: Restart GRE tunnels

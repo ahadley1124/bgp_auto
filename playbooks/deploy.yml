@@ -17,5 +17,5 @@
         cache_valid_time: 3600
 
   roles:
-    - wireguard
     - bird
+    - gre

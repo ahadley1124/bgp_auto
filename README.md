@@ -1,57 +1,79 @@
 # bgp_auto
 
-This repository contains Ansible playbooks and roles to automate BGP and WireGuard configuration (roles: `bird`, `wireguard`).
+Automated BGP, WireGuard, and GRE tunnel configuration using Ansible and NetBox.
 
-**Prerequisites**
+This repository automates the deployment of network infrastructure including:
+- **iBGP mesh** with route reflector support using BIRD
+- **WireGuard VPN** tunnels with automatic key management
+- **GRE tunnels** with dynamic IP allocation from NetBox
 
-- **Ansible:** install a recent Ansible release (2.9+ recommended).
-- **Inventory:** configure `inventory/netbox.yml` or provide your own inventory file.
-- **Credentials & Access:** SSH access to target hosts and any required privilege escalation (sudo) credentials.
-- **NetBox:** set `NETBOX_API` and `NETBOX_TOKEN` in your environment for inventory access. The WireGuard sync role also accepts `NETBOX_URL` as a fallback.
-- **Variables:** adjust repo variables in `group_vars/all.yml` as needed.
+All configuration is **source-controlled in NetBox** — devices, custom fields, and IP addresses are defined once and propagated automatically.
 
-**Quick Start — run the playbook**
+## Quick Start
 
-- From the repository root, run:
+### Prerequisites
+
+- **Ansible:** 2.9+ recommended
+- **Python:** 3.6+
+- **SSH access** to target routers with sudo privileges
+- **NetBox instance** with API access
+- Environment variables set:
+  ```bash
+  export NETBOX_API="https://netbox.example.com"
+  export NETBOX_TOKEN="your-api-token"
+  ```
+
+### Run the Deployment
 
 ```bash
-ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml
-```
-
-- If the playbook requires privilege escalation, add `--become` and optionally `--ask-become-pass`:
-
-```bash
+# From repo root, deploy to all devices
 ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become
+
+# Dry-run to preview changes
+ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --check
+
+# Target a single device
+ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml -e device_name=router01 --become
+
+# Verbose output for debugging
+ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 ```
 
-- To do a dry-run (no changes applied), add `--check`:
+## Documentation
 
-```bash
-ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --check
+- **[Architecture](docs/ARCHITECTURE.md)** — How the system works end-to-end
+- **[NetBox Setup Guide](docs/NETBOX_SETUP.md)** — Create and configure NetBox objects for each peer
+- **[Role Documentation](docs/ROLE_DOCUMENTATION.md)** — Detailed breakdown of each Ansible role
+- **[Workflow Guide](docs/WORKFLOW_GUIDE.md)** — Step-by-step instructions to add new peers
+
+## Project Structure
+
+```
+├── ansible.cfg                 # Ansible configuration
+├── group_vars/all.yml         # Global variables (BGP AS, WireGuard port, etc.)
+├── inventory/netbox.yml       # NetBox dynamic inventory plugin config
+├── playbooks/deploy.yml       # Main deployment playbook
+├── roles/
+│   ├── bird/                  # iBGP/OSPF/BFD configuration
+│   ├── wireguard/             # WireGuard VPN setup
+│   └── gre/                   # GRE tunnel configuration
+└── docs/                      # Documentation
 ```
 
-- To get more output for debugging, add `-v`, `-vv` or `-vvv`.
+## Key Features
 
-**Examples**
+- **NetBox-driven configuration**: All peer data lives in NetBox custom fields
+- **Automatic iBGP mesh**: Discovers all routers and peers them together
+- **Route reflector support**: Designated route reflectors reduce mesh complexity
+- **WireGuard key sync**: Private/public keys automatically stored in NetBox
+- **Configuration validation**: BIRD config validated before reload
+- **Idempotent playbook**: Safe to run multiple times
 
-- Run only the `bird` role or limit hosts/groups using `--limit`:
+## Configuration Hierarchy
 
-```bash
-ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --limit "routers"
-```
+1. **NetBox** is the source of truth (devices, IPs, custom fields)
+2. **Inventory plugin** dynamically builds host inventory from NetBox
+3. **Host facts** from NetBox populate role variables
+4. **Roles** generate and deploy configuration files
 
-- Target a single device by its NetBox device name by passing the `device_name` extra var:
-
-```bash
-ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml -e device_name=router01
-```
-
-The `device_name` value should match the NetBox device name (inventory hostname provided by the `netbox.netbox.nb_inventory` plugin). If not specified, the playbook runs against `all` hosts.
-
-**Notes**
-
-- This repository includes an `ansible.cfg` which will be used by Ansible when running from the repo root.
-- Edit `group_vars/all.yml` to set global variables used by the roles.
-- If you are using dynamic inventory or NetBox integration, ensure any required API tokens or inventory plugins are configured.
-
-If you want, I can add usage examples for specific environments or add a section on configuring NetBox inventory.
+See [Architecture](docs/ARCHITECTURE.md) for detailed flow diagrams and examples.
