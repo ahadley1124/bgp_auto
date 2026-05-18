@@ -5,3 +5,6 @@ loopback_ip: "{{ netbox_cf_loopback_ip | ipaddr('address') }}"
 # NetBox configuration for GRE
 netbox_token: "{{ vault_netbox_token }}"
 netbox_url: "{{ vault_netbox_url }}"
+
+# When true, attempt GRE tunnel creation even if facts are missing.
+gre_force_create: false
