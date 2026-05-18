@@ -1,16 +1,23 @@
 # Get loopback IP from NetBox
+- name: Validate NetBox credentials for GRE
+  ansible.builtin.assert:
+    that:
+      - (lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true)) | length > 0
+      - lookup('env', 'NETBOX_TOKEN') | length > 0
+    fail_msg: NETBOX_API (or NETBOX_URL) and NETBOX_TOKEN must be set to query NetBox for GRE configuration.
+
 - name: Get loopback interface
   ansible.builtin.uri:
-    url: "{{ netbox_url }}/api/dcim/interfaces/?device={{ inventory_hostname }}&name=lo"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/dcim/interfaces/?device={{ inventory_hostname }}&name=lo"
     headers:
-      Authorization: "Token {{ netbox_token }}"
+      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
   register: lo_iface
 
 - name: Get loopback IP address
   ansible.builtin.uri:
-    url: "{{ netbox_url }}/api/ipam/ip-addresses/?interface_id={{ lo_iface.json.results[0].id }}"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/ip-addresses/?interface_id={{ lo_iface.json.results[0].id }}"
     headers:
-      Authorization: "Token {{ netbox_token }}"
+      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
   register: lo_ip
   when: lo_iface.json.results | length > 0
 
@@ -22,10 +29,10 @@
 # Allocate tunnel IP addresses from NetBox
 - name: Allocate tunnel IP pair A
   ansible.builtin.uri:
-    url: "{{ netbox_url }}/api/ipam/prefixes/{{ gre_tunnel_prefix_id }}/available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_tunnel_prefix_id }}/available-ips/"
     method: POST
     headers:
-      Authorization: "Token {{ netbox_token }}"
+      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
     body_format: json
     body:
       count: 2
@@ -34,10 +41,10 @@
 
 - name: Allocate tunnel IP pair B
   ansible.builtin.uri:
-    url: "{{ netbox_url }}/api/ipam/prefixes/{{ gre_tunnel_prefix_id }}/available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_tunnel_prefix_id }}/available-ips/"
     method: POST
     headers:
-      Authorization: "Token {{ netbox_token }}"
+      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
     body_format: json
     body:
       count: 2
