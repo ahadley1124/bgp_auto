@@ -21,7 +21,10 @@ All configuration is **source-controlled in NetBox** — devices, custom fields,
   ```bash
   export NETBOX_API="https://netbox.example.com"
   export NETBOX_TOKEN="your-api-token"
+  export BGP_AUTO_LOCAL_MACHINE="router01"
   ```
+
+Set `BGP_AUTO_LOCAL_MACHINE` to the inventory name of the device you are running on when that device is managed by the same playbook. Ansible will use a local connection for that host instead of SSH.
 
 ### Run the Deployment
 
@@ -33,6 +36,10 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become
 ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --check
 
 # Target a single device
+ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml -e device_name=router01 --become
+
+# Run against a device from that device itself without SSHing back into it
+export BGP_AUTO_LOCAL_MACHINE="router01"
 ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml -e device_name=router01 --become
 
 # Verbose output for debugging

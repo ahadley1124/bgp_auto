@@ -7,5 +7,6 @@ compose:
   ansible_user: custom_fields.ansible_user
   ansible_host: primary_ip.address | ipaddr('address')
   loopback_ip: netbox_cf_loopback_ip | ipaddr('address')
+  ansible_connection: "{{ 'local' if inventory_hostname == (lookup('env', 'BGP_AUTO_LOCAL_MACHINE') | default('', true)) else 'ssh' }}"
 
 config_context: true

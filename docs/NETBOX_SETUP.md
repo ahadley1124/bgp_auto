@@ -220,6 +220,7 @@ cache: false
 compose:
   ansible_host: primary_ip
   loopback_ip: netbox_cf_loopback_ip
+  ansible_connection: "{{ 'local' if inventory_hostname == (lookup('env', 'BGP_AUTO_LOCAL_MACHINE') | default('', true)) else 'ssh' }}"
   netbox_cf_loopback_ip: netbox_cf_loopback_ip
   netbox_cf_bgp_role: netbox_cf_bgp_role
   netbox_cf_wg_private_key: netbox_cf_wg_private_key
@@ -229,6 +230,8 @@ compose:
 group_by:
   - device_role
 ```
+
+If you are running the playbook on one of the managed devices, set `BGP_AUTO_LOCAL_MACHINE` to that device's NetBox name before launching Ansible. That host will use `ansible_connection=local` and will not SSH back into itself.
 
 ## Step 9: Test Connectivity
 
