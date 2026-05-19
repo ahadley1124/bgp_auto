@@ -28,8 +28,7 @@
 # ---------------------------
 
 - name: Set GRE peers
-  set_fact:
-    gre_peers: "{{ effective_bgp_peers | default([]) }}"
+
 
 # ---- Build topology (reuse BGP peer selection logic so gre can run standalone) ----
 - name: Build full node list
@@ -44,7 +43,7 @@
 
 - name: Build iBGP peer list (exclude self)
   set_fact:
-    bgp_peers: "{{ all_nodes | difference([inventory_hostname]) }}"
+    bgp_peers: "{{ ((netbox_cf_peers | default(netbox_cf_wg_peers | default([])) | length > 0) | ternary((netbox_cf_peers | default(netbox_cf_wg_peers | default([]))), (all_nodes | difference([inventory_hostname])))) | difference([inventory_hostname]) }}"
 
 - name: Identify route reflectors
   set_fact:
@@ -58,6 +57,10 @@
 - name: Select effective BGP peers
   set_fact:
     effective_bgp_peers: "{{ bgp_peers if (netbox_cf_bgp_role | default('client')) == 'rr' else (route_reflectors if (route_reflectors | length > 0) else bgp_peers) }}"
+
+- name: Set GRE peers
+  set_fact:
+    gre_peers: "{{ effective_bgp_peers | default([]) }}"
 
 - name: Stop if no peers
   meta: end_host

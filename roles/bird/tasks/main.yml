@@ -21,7 +21,7 @@
 
 - name: Build iBGP peer list (exclude self)
   set_fact:
-    bgp_peers: "{{ all_nodes | difference([inventory_hostname]) }}"
+    bgp_peers: "{{ ((netbox_cf_peers | default(netbox_cf_wg_peers | default([])) | length > 0) | ternary((netbox_cf_peers | default(netbox_cf_wg_peers | default([]))), (all_nodes | difference([inventory_hostname])))) | difference([inventory_hostname]) }}"
 
 # ---- Optional: Route reflector logic ----
 
