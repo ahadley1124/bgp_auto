@@ -105,12 +105,12 @@
 
 - name: Record created GRE prefix A id
   ansible.builtin.set_fact:
-    gre_prefix_a_id: "{{ created_prefix_a['json']['id'] if ('json' in created_prefix_a and 'id' in created_prefix_a['json']) else created_prefix_a['id'] }}"
+    gre_prefix_a_id: "{{ created_prefix_a.get('json', {}).get('id', created_prefix_a.get('id')) }}"
   when: created_prefix_a is defined and gre_prefix_a_id is not defined
 
 - name: Record created GRE prefix B id
   ansible.builtin.set_fact:
-    gre_prefix_b_id: "{{ created_prefix_b['json']['id'] if ('json' in created_prefix_b and 'id' in created_prefix_b['json']) else created_prefix_b['id'] }}"
+    gre_prefix_b_id: "{{ created_prefix_b.get('json', {}).get('id', created_prefix_b.get('id')) }}"
   when: created_prefix_b is defined and gre_prefix_b_id is not defined
 
 - name: Ensure GRE prefix ids are available
