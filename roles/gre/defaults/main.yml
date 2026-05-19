@@ -1,0 +1,4 @@
+---
+# Default variables for GRE role
+# Role used in NetBox to tag /31 prefixes for GRE tunnels
+gre_tunnel_prefix_role: gre-tunnels
