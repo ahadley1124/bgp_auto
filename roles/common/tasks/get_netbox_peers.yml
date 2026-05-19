@@ -1,0 +1,15 @@
+---
+# Fetch device from NetBox and extract `custom_fields.peers` (or legacy `wg_peers`).
+- name: Query NetBox device for custom fields
+  uri:
+    url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/dcim/devices/?name={{ inventory_hostname | urlencode }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: netbox_device
+  failed_when: false
+
+- name: Set `netbox_cf_peers` from NetBox custom fields when not present
+  set_fact:
+    netbox_cf_peers: "{{ netbox_device.json.results[0].custom_fields.peers | default(netbox_device.json.results[0].custom_fields.wg_peers | default([])) }}"
+  when: netbox_device.json.results | length > 0 and (netbox_cf_peers is not defined or (netbox_cf_peers | length == 0))

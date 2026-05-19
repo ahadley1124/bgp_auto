@@ -7,6 +7,9 @@
     - /etc/bird
     - /etc/bird/generated
 
+- name: Get NetBox peers if not provided by inventory
+  include_tasks: ../common/tasks/get_netbox_peers.yml
+
 # ---- Build topology ----
 
 - name: Build full node list

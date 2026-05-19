@@ -27,8 +27,9 @@
 # Use BGP peers
 # ---------------------------
 # ---------------------------
-
 # ---- Build topology (reuse BGP peer selection logic so gre can run standalone) ----
+- name: Get NetBox peers if not provided by inventory
+  include_tasks: ../../common/tasks/get_netbox_peers.yml
 - name: Build full node list
   set_fact:
     all_nodes: >-
