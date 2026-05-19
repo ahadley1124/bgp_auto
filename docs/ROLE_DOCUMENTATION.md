@@ -1,4 +1,4 @@
-# Role Documentation
+﻿# Role Documentation
 
 Detailed documentation of each Ansible role in the `bgp_auto` playbook.
 
@@ -6,27 +6,27 @@ Detailed documentation of each Ansible role in the `bgp_auto` playbook.
 
 Configures WireGuard VPN tunnels for encrypted peer-to-peer communication.
 
-### Purpose
+### WireGuard Purpose
 
-- Generates or retrieves WireGuard private/public key pair
+- Generates or retrieves the WireGuard private/public key pair
 - Syncs keys to NetBox custom fields for persistence
-- Generates WireGuard interface config with peer list
-- Manages WireGuard systemd service
+- Generates WireGuard interface config with the peer list
+- Manages the WireGuard systemd service
 
-### Prerequisites
+### WireGuard Prerequisites
 
-- WireGuard package installed (handled by playbook)
-- WireGuard kernel module loaded (automatic on modern kernels)
-- All peers must be reachable via Endpoint IP
+- WireGuard package installed, handled by the playbook
+- WireGuard kernel module loaded, automatic on modern kernels
+- All peers must be reachable via the endpoint IP
 
-### Configuration Files Generated
+### WireGuard Configuration Files Generated
 
 **Location:** `/etc/wireguard/wg0.conf`
 
 ```ini
 [Interface]
 Address = 10.0.0.1/32          # From netbox_cf_loopback_ip
-PrivateKey = xxx...            # Private key (no log)
+PrivateKey = xxx...            # Private key, no log
 ListenPort = 51820
 
 [Peer]
@@ -34,59 +34,63 @@ PublicKey = yyy...             # Peer public key
 Endpoint = 192.168.1.2:51820   # Peer management IP
 AllowedIPs = 10.0.0.2/32       # Peer loopback IP
 PersistentKeepalive = 25       # Keep connection alive
-
-# ... more [Peer] sections for each wg_peer
 ```
 
-### Variables
+### WireGuard Variables
 
-**Required:**
-- `wg_port` — Listen port (default: 51820)
-- `netbox_cf_loopback_ip` — Router's loopback IP
-- `netbox_cf_peers` — List of peer hostnames (from NetBox). The role will fall back to `netbox_cf_wg_peers` for backwards compatibility if `netbox_cf_peers` is not set.
+#### Required
 
-**Auto-Generated:**
-- `wg_private_key` — Generated if not in NetBox
-- `wg_public_key` — Derived from private key
+- `wg_port` - Listen port, default `51820`
+- `netbox_cf_loopback_ip` - Router's loopback IP
+- `netbox_cf_peers` - List of peer hostnames from NetBox; falls back to `netbox_cf_wg_peers` if needed
 
-**Optional:**
-- `wg_port_override` — Override listen port per-host
-- `NETBOX_VALIDATE_CERTS` — SSL verification (default: true)
+#### Auto-Generated
 
-### Key Sync Process
+- `wg_private_key` - Generated if not in NetBox
+- `wg_public_key` - Derived from the private key
+
+#### Optional
+
+- `wg_port_override` - Override listen port per host
+- `NETBOX_VALIDATE_CERTS` - SSL verification, default `true`
+
+### WireGuard Key Sync Process
 
 1. If `netbox_cf_wg_private_key` is empty or undefined:
-   - Generate new private key: `wg genkey`
-   - Derive public key: `wg pubkey`
-2. Query NetBox API for device ID by hostname
-3. PATCH device custom fields with new keys
-4. Keys stored in NetBox for next run
+   - Generate a new private key with `wg genkey`
+   - Derive a public key with `wg pubkey`
+2. Query the NetBox API for the device ID by hostname
+3. PATCH device custom fields with the new keys
+4. Keys are stored in NetBox for the next run
 
-**Note:** Keys are `no_log: true` in playbook output for security.
+**Note:** Keys are marked `no_log: true` in playbook output for security.
 
-### Handlers
+### WireGuard Handlers
 
 **Handler:** `Restart WireGuard`
 
 - Triggered when `/etc/wireguard/wg0.conf` changes
-- Runs: `systemctl restart wg-quick@wg0`
+- Runs `systemctl restart wg-quick@wg0`
 - Service automatically starts on boot
 
-### Troubleshooting
+### WireGuard Troubleshooting
 
-**"Device not found in NetBox"**
-- Verify device name matches inventory hostname exactly
-- Check NETBOX_TOKEN has device read/write permissions
-- Test: `curl "$NETBOX_API/api/dcim/devices/?name=router01"`
+#### Device not found in NetBox
 
-- **"No peers connecting"**
-- Verify `netbox_cf_peers` (or legacy `netbox_cf_wg_peers`) is a valid JSON list: `["router02", "router03"]`
+- Verify the device name matches the inventory hostname exactly
+- Check `NETBOX_TOKEN` has device read/write permissions
+- Test with `curl "$NETBOX_API/api/dcim/devices/?name=router01"`
+
+#### No peers connecting
+
+- Verify `netbox_cf_peers` or legacy `netbox_cf_wg_peers` is a valid JSON list such as `["router02", "router03"]`
 - Check peer hostnames exist in inventory
-- Test connectivity: `ping <peer_endpoint>`
+- Test connectivity with `ping <peer_endpoint>`
 
-**"Keys not syncing to NetBox"**
+#### Keys not syncing to NetBox
+
 - Verify `netbox_cf_wg_private_key` and `netbox_cf_wg_public_key` custom fields exist
-- Check API token permissions (POST/PATCH on devices)
+- Check API token permissions for POST and PATCH on devices
 - Run with `-vvv` to see API responses
 
 ---
@@ -95,28 +99,26 @@ PersistentKeepalive = 25       # Keep connection alive
 
 Configures BIRD Internet Routing Daemon for BGP, OSPF, and BFD.
 
-### Purpose
+### BIRD Purpose
 
 - Discovers all router peers in NetBox dynamically
 - Generates full-mesh or route-reflector iBGP topology
 - Configures OSPF for loopback reachability
 - Enables BFD for fast failure detection
 
-### Prerequisites
+### BIRD Prerequisites
 
-- BIRD installed (usually: `apt install bird bird2`)
-- Loopback IP configured on router
-- All peers reachable on loopback network
+- BIRD installed, usually `apt install bird bird2`
+- Loopback IP configured on the router
+- All peers reachable on the loopback network
 
-### Configuration Files Generated
+### BIRD Configuration Files Generated
 
 **Location:** `/etc/bird/generated/`
 
 #### File: `ibgp.conf`
 
-iBGP peer configuration (full-mesh or RR-aware):
-
-```
+```text
 protocol bgp ibgp_router02 {
     local as 17290;
     neighbor 10.0.0.2 as 17290;
@@ -133,9 +135,7 @@ protocol bgp ibgp_router02 {
 
 #### File: `ospf.conf`
 
-OSPF for loopback reachability (if enabled):
-
-```
+```text
 protocol ospf v3 ospf_v6 {
     ipv6 {
         import all;
@@ -149,9 +149,7 @@ protocol ospf v3 ospf_v6 {
 
 #### File: `bfd.conf`
 
-BFD (Bidirectional Forwarding Detection) for fast adjacency failure:
-
-```
+```text
 protocol bfd {
     multihop {
         neighbor 10.0.0.2 dev lo;
@@ -159,133 +157,135 @@ protocol bfd {
 }
 ```
 
-### Variables
+### BIRD Variables
 
-**From NetBox:**
-- `bgp_as` — BGP Autonomous System (from `group_vars/all.yml`)
-- `loopback_ip` — Router's loopback IP (from `netbox_cf_loopback_ip`)
-- `netbox_cf_bgp_role` — `client` or `rr` (route reflector)
-- `netbox_cf_ospf_enabled` — Enable OSPF (default: true)
+#### BIRD From NetBox
 
-**Discovered at Runtime:**
-- `all_nodes` — All routers with role = "Router" in NetBox
-- `bgp_peers` — All nodes except self
-- `route_reflectors` — Nodes with `bgp_role = "rr"`
-- `effective_bgp_peers` — Final peer list based on topology
+- `bgp_as` - BGP autonomous system from `group_vars/all.yml`
+- `loopback_ip` - Router loopback IP from `netbox_cf_loopback_ip`
+- `netbox_cf_bgp_role` - `client` or `rr` for route reflector
+- `netbox_cf_ospf_enabled` - Enable OSPF, default `true`
 
-### Topology Logic
+#### Discovered at Runtime
 
-**Full Mesh (default):**
+- `all_nodes` - All routers with role `Router` in NetBox
+- `bgp_peers` - All nodes except self
+- `route_reflectors` - Nodes with `bgp_role = "rr"`
+- `effective_bgp_peers` - Final peer list based on topology
+
+### BIRD Topology Logic
+
+#### Full Mesh, default
+
+```text
+If no route reflectors are defined:
+  -> Each router peers with all other routers
+  -> BGP convergence is slower, but more resilient
 ```
-If no route reflectors defined:
-  → Each router peers with all other routers
-  → BGP convergence slower, more resilient
-```
 
-**Route Reflector:**
-```
+#### Route Reflector
+
+```text
 If any router has bgp_role = "rr":
-  → Clients (bgp_role = "client") peer only with RRs
-  → RRs peer with each other and clients
-  → Reduces BGP churn, enables easy scaling
+  -> Clients, bgp_role = "client", peer only with RRs
+  -> RRs peer with each other and clients
+  -> Reduces BGP churn and enables easier scaling
 ```
 
-### Handlers
+### BIRD Handlers
 
 **Handler:** `reload bird`
 
 - Triggered when any config file changes
-- Runs: `systemctl reload bird`
-- Graceful reload (no connection drops)
+- Runs `systemctl reload bird`
+- Performs a graceful reload with no connection drops
 
-### Validation
+### BIRD Validation
 
-Before reload, playbook runs:
+Before reload, the playbook runs:
+
 ```bash
 bird -p -c /etc/bird/bird.conf
 ```
 
-Fails playbook if syntax errors exist.
+### BIRD Status Checks
 
-### Verify BGP Status
-
-SSH to router and check:
+SSH to the router and check:
 
 ```bash
-# List all protocols
-$ birdc show protocols
-
-# Check specific BGP session
-$ birdc show protocols ibgp_router02
-
-# View BGP tables
-$ birdc show route
-
-# Test BGP connectivity
-$ birdc show bgp neighbors
+birdc show protocols
+birdc show protocols ibgp_router02
+birdc show route
+birdc show bgp neighbors
 ```
 
-### Troubleshooting
+### BIRD Troubleshooting
 
-**"No peers discovered"**
-- Verify NetBox has multiple devices with role = "Router"
-- Check NETBOX_API and NETBOX_TOKEN are set
-- Run: `ansible-inventory -i inventory/netbox.yml --list`
+#### No peers discovered
 
-**"BIRD config validation fails"**
-- Manual test: `bird -p -c /etc/bird/bird.conf`
-- Check jinja2 template syntax in `roles/bird/templates/`
-- Run playbook with `-vvv` to see generated configs
+- Verify NetBox has multiple devices with role `Router`
+- Check `NETBOX_API` and `NETBOX_TOKEN` are set
+- Run `ansible-inventory -i inventory/netbox.yml --list`
 
-**"BGP peers not connecting"**
-- Verify loopback connectivity: `ping <peer_loopback>`
-- Check firewall allows BGP port 179: `netstat -tuln | grep 179`
+#### BIRD config validation fails
+
+- Run `bird -p -c /etc/bird/bird.conf` manually
+- Check Jinja2 template syntax in `roles/bird/templates/`
+- Run the playbook with `-vvv` to see the generated configs
+
+#### BGP peers not connecting
+
+- Verify loopback connectivity with `ping <peer_loopback>`
+- Check the firewall allows BGP port 179 with `netstat -tuln | grep 179`
 - Verify `netbox_cf_loopback_ip` is set for all peers
-- Check BFD status: `birdc show bfd sessions`
+- Check BFD status with `birdc show bfd sessions`
 
-**"Route reflector not working"**
-- Verify RR has `netbox_cf_bgp_role: "rr"` in NetBox
+#### Route reflector not working
+
+- Verify the RR has `netbox_cf_bgp_role: "rr"` in NetBox
 - RR should peer with all clients and other RRs
-- Clients should NOT peer with each other
-- Test: `birdc show route where source = BGP`
+- Clients should not peer with each other
+- Test with `birdc show route where source = BGP`
 
 ---
 
 ## Role: `gre`
 
-Configures Generic Routing Encapsulation tunnels (optional, advanced).
+Configures Generic Routing Encapsulation tunnels, optional and advanced.
 
-### Purpose
+### GRE Purpose
 
 - Allocates tunnel IP pairs dynamically from NetBox
 - Establishes GRE tunnels between peers
-- Enables layer 3 connectivity over existing network
+- Enables layer 3 connectivity over the existing network
 
-### Prerequisites
+### GRE Prerequisites
 
-- Loopback IP configured on router
-- NetBox prefix defined for tunnel IPs
-- GRE module loaded on kernel
+- Loopback IP configured on the router
+- NetBox prefixes tagged with the `gre-tunnels` role
+- GRE module loaded on the kernel
 
-### Configuration Process
+### GRE Configuration Process
 
-1. Query NetBox for loopback interface IP
-2. Allocate two IP addresses from tunnel prefix
-3. Create GRE interface with tunnel config
-4. Bring up GRE interface
+1. Query NetBox for the loopback interface IP
+2. Discover the next available `/31` GRE prefixes from NetBox
+3. Allocate two IP addresses from each tunnel prefix
+4. Create the GRE interface with the tunnel config
+5. Bring up the GRE interface
 
-### Variables
+### GRE Variables
 
-**From NetBox:**
-- `netbox_url` — NetBox URL
-- `netbox_token` — API token
-- `gre_tunnel_prefix_id` — NetBox prefix ID for tunnel IPs
-- `loopback_ip` — Router loopback (tunnel endpoint)
+#### GRE From NetBox
 
-### Example Generated Config
+- `netbox_url` - NetBox URL
+- `netbox_token` - API token
+- `gre_tunnel_prefix_role` - NetBox prefix role used to find GRE tunnel `/31` prefixes
+- `loopback_ip` - Router loopback, the tunnel endpoint
+
+### GRE Example Generated Config
 
 ```bash
-# Allocate tunnel IPs from prefix
+# Allocate tunnel IPs from GRE prefixes
 Tunnel IP A: 172.16.0.1/31
 Tunnel IP B: 172.16.0.3/31
 
@@ -298,17 +298,19 @@ ip addr add 172.16.0.1/31 dev gre0
 ip route add 10.0.0.2/32 via 172.16.0.2 dev gre0
 ```
 
-### Troubleshooting
+### GRE Troubleshooting
 
-**"Tunnel allocation fails"**
-- Verify tunnel prefix exists in NetBox
-- Check prefix has available IPs
-- Test API: `curl "$NETBOX_API/api/ipam/prefixes/ID/available-ips/"`
+#### Tunnel allocation fails
 
-**"GRE interface not up"**
-- Check kernel module: `lsmod | grep gre`
-- Verify endpoint IPs are reachable: `ping <remote_loopback>`
-- Check MTU settings (GRE reduces MTU by 24 bytes)
+- Verify GRE prefixes exist in NetBox with role `gre-tunnels`
+- Check there are enough `/31` prefixes for the number of hosts
+- Test the API with `curl "$NETBOX_API/api/ipam/prefixes/?role=gre-tunnels&limit=0"`
+
+#### GRE interface not up
+
+- Check the kernel module with `lsmod | grep gre`
+- Verify endpoint IPs are reachable with `ping <remote_loopback>`
+- Check MTU settings, because GRE reduces MTU by 24 bytes
 
 ---
 
@@ -316,37 +318,38 @@ ip route add 10.0.0.2/32 via 172.16.0.2 dev gre0
 
 ### Variable Composition
 
-Variables come from multiple sources with this priority:
+Variables come from multiple sources in this priority order:
 
-1. **Playbook arguments** (highest priority): `ansible-playbook ... -e var=value`
-2. **Host-specific vars** (from NetBox via inventory plugin)
-3. **Group vars** (from `group_vars/all.yml`)
-4. **Role defaults** (lowest priority)
+1. **Playbook arguments**, highest priority, for example `ansible-playbook ... -e var=value`
+2. **Host-specific vars** from NetBox via the inventory plugin
+3. **Group vars** from `group_vars/all.yml`
+4. **Role defaults**, lowest priority
 
 ### Custom Fields
 
 NetBox custom fields are mapped to Ansible variables:
-- NetBox field `loopback_ip` → Ansible `netbox_cf_loopback_ip`
-- NetBox field `bgp_role` → Ansible `netbox_cf_bgp_role`
-- Etc.
+
+- NetBox field `loopback_ip` -> Ansible `netbox_cf_loopback_ip`
+- NetBox field `bgp_role` -> Ansible `netbox_cf_bgp_role`
+- NetBox field `peers` -> Ansible `netbox_cf_peers`
 
 This mapping happens in `inventory/netbox.yml` via the `compose` section.
 
 ### Idempotency
 
 All roles are idempotent:
-- Running playbook multiple times = same result
+
+- Running the playbook multiple times produces the same result
 - No duplicate configs or side effects
 - Safe for continuous deployment
 
 ### Service Management
 
 All roles use systemd handlers:
-- Config changes automatically trigger service reload/restart
-- No manual service management needed
-- Handlers ensure atomic service updates
 
----
+- Config changes automatically trigger service reload or restart
+- No manual service management is needed
+- Handlers ensure atomic service updates
 
 ## Adding Custom Configuration
 
@@ -354,8 +357,9 @@ All roles use systemd handlers:
 
 To add custom BIRD configuration:
 
-1. Create new template in `roles/bird/templates/custom.conf.j2`
-2. Add task in `roles/bird/tasks/main.yml`:
+1. Create a new template in `roles/bird/templates/custom.conf.j2`
+2. Add a task in `roles/bird/tasks/main.yml`:
+
    ```yaml
    - name: Deploy custom protocol config
      template:
@@ -368,8 +372,8 @@ To add custom BIRD configuration:
 
 To add custom WireGuard config:
 
-1. Modify `roles/wireguard/templates/wg0.conf.j2` or create new config
-2. Handle config file permissions (600)
-3. Ensure handler triggers restart
+1. Modify `roles/wireguard/templates/wg0.conf.j2` or create a new config
+2. Handle config file permissions, 600
+3. Ensure the handler triggers a restart
 
-See role template files for detailed structure and Jinja2 filters used.
+See the role template files for detailed structure and the Jinja2 filters used.

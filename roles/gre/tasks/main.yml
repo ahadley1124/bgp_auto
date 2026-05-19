@@ -26,10 +26,37 @@
     gre_loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
   when: lo_ip.json.results | length > 0
 
-# Allocate tunnel IP addresses from NetBox
+# Allocate tunnel IP addresses from NetBox /31 prefixes tagged with role gre-tunnels
+- name: Get GRE tunnel prefixes
+  ansible.builtin.uri:
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/?role={{ gre_tunnel_prefix_role | urlencode }}&limit=0"
+    headers:
+      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
+  register: gre_tunnel_prefix_lookup
+
+- name: Select GRE tunnel prefixes for this host
+  ansible.builtin.set_fact:
+    gre_tunnel_prefix_candidates: >-
+      {{ (gre_tunnel_prefix_lookup.json.results | default([])
+          | selectattr('prefix', 'match', '^.*/31$')
+          | sort(attribute='prefix')) | list }}
+    gre_tunnel_prefix_index: "{{ ansible_play_hosts_all.index(inventory_hostname) * 2 }}"
+
+- name: Validate GRE tunnel prefix availability
+  ansible.builtin.assert:
+    that:
+      - gre_tunnel_prefix_candidates | length >= (gre_tunnel_prefix_index | int) + 2
+    fail_msg: >-
+      NetBox does not have enough /31 prefixes with role '{{ gre_tunnel_prefix_role }}' to allocate GRE tunnels for {{ inventory_hostname }}.
+
+- name: Set GRE tunnel prefixes for this host
+  ansible.builtin.set_fact:
+    gre_tunnel_prefix_a: "{{ gre_tunnel_prefix_candidates[gre_tunnel_prefix_index | int] }}"
+    gre_tunnel_prefix_b: "{{ gre_tunnel_prefix_candidates[(gre_tunnel_prefix_index | int) + 1] }}"
+
 - name: Allocate tunnel IP pair A
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_tunnel_prefix_id }}/available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_tunnel_prefix_a.id }}/available-ips/"
     method: POST
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
@@ -38,11 +65,10 @@
       count: 2
     return_content: true
   register: tunnel_a
-  when: gre_tunnel_prefix_id is defined
 
 - name: Allocate tunnel IP pair B
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_tunnel_prefix_id }}/available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_tunnel_prefix_b.id }}/available-ips/"
     method: POST
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
@@ -51,30 +77,26 @@
       count: 2
     return_content: true
   register: tunnel_b
-  when: gre_tunnel_prefix_id is defined
 
 - name: Parse tunnel IP responses
   ansible.builtin.set_fact:
     tunnel_a_ips: "{{ tunnel_a.json | default(tunnel_a.content | default('[]') | from_json) }}"
     tunnel_b_ips: "{{ tunnel_b.json | default(tunnel_b.content | default('[]') | from_json) }}"
-  when:
-    - tunnel_a is succeeded
-    - tunnel_b is succeeded
 
 - name: Set tunnel IP facts
+  ansible.builtin.assert:
+    that:
+      - tunnel_a_ips | length >= 2
+      - tunnel_b_ips | length >= 2
+    fail_msg: >-
+      NetBox did not return two IPs for one of the selected /31 GRE prefixes.
+
+- name: Store tunnel IP facts
   ansible.builtin.set_fact:
     gre_a_local: "{{ tunnel_a_ips[0].address }}"
     gre_a_peer: "{{ tunnel_a_ips[1].address }}"
     gre_b_local: "{{ tunnel_b_ips[0].address }}"
     gre_b_peer: "{{ tunnel_b_ips[1].address }}"
-  when:
-    - tunnel_a_ips is defined
-    - tunnel_b_ips is defined
-    - tunnel_a_ips | length >= 2
-    - tunnel_b_ips | length >= 2
-  failed_when:
-    - tunnel_a_ips | length < 2
-    - tunnel_b_ips | length < 2
 
 # Configure loopback interface
 - name: Configure loopback interface
@@ -86,7 +108,7 @@
 
 - name: Set GRE tunnel names
   ansible.builtin.set_fact:
-    gre_tunnel_name_a: "{{ gre_peer_name }}-gre-a"
+    gre_tunnel_name_a: "{{ gre_peer_name }}-gre"
     gre_tunnel_name_b: "{{ gre_peer_name }}-gre-b"
   when: gre_peer_name is defined
 

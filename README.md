@@ -3,6 +3,7 @@
 Automated BGP, WireGuard, and GRE tunnel configuration using Ansible and NetBox.
 
 This repository automates the deployment of network infrastructure including:
+
 - **iBGP mesh** with route reflector support using BIRD
 - **WireGuard VPN** tunnels with automatic key management
 - **GRE tunnels** with dynamic IP allocation from NetBox
@@ -18,6 +19,7 @@ All configuration is **source-controlled in NetBox** — devices, custom fields,
 - **SSH access** to target routers with sudo privileges
 - **NetBox instance** with API access
 - Environment variables set:
+
   ```bash
   export NETBOX_API="https://netbox.example.com"
   export NETBOX_TOKEN="your-api-token"
@@ -55,7 +57,7 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 
 ## Project Structure
 
-```
+```text
 ├── ansible.cfg                 # Ansible configuration
 ├── group_vars/all.yml         # Global variables (BGP AS, WireGuard port, etc.)
 ├── inventory/netbox.yml       # NetBox dynamic inventory plugin config
