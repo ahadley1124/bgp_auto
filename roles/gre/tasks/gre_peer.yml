@@ -7,6 +7,10 @@
   set_fact:
     gre_pair_key: "{{ [inventory_hostname, gre_peer_name] | sort | join('-') }}"
 
+- name: Debug pair key
+  debug:
+    msg: "GRE pair key for {{ inventory_hostname }} and {{ gre_peer_name }} is {{ gre_pair_key }}"
+
 # ---------------------------
 # Deterministic subnet math
 # ---------------------------
@@ -15,10 +19,20 @@
   set_fact:
     gre_offset: "{{ (gre_pair_key | hash('sha1') | int(base=16)) % 60000 }}"
 
+- name: Debug deterministic offset
+  debug:
+    msg: "GRE offset for {{ gre_pair_key }} is {{ gre_offset }}"
+
 - name: Build /31 networks
   set_fact:
     gre_prefix_a: "10.255.{{ (gre_offset // 256) % 256 }}.{{ gre_offset % 256 }}/31"
     gre_prefix_b: "10.255.{{ (gre_offset // 256) % 256 }}.{{ (gre_offset % 256 + 2) % 256 }}/31"
+
+- name: Debug /31 networks
+  debug:
+    msg:
+      - "GRE prefix A: {{ gre_prefix_a }}"
+      - "GRE prefix B: {{ gre_prefix_b }}"
 
 - name: Compute gre base nets and prefix
   set_fact:
@@ -26,14 +40,23 @@
     gre_b_net: "{{ gre_prefix_b.split('/')[0] }}"
     gre_prefix_len: "{{ gre_prefix_a.split('/')[1] }}"
 
-- name: Compute gre octets and peer octets
+- name: Compute gre base nets and last octets
   set_fact:
     gre_a_base: "{{ gre_a_net.split('.')[:-1] | join('.') }}"
     gre_b_base: "{{ gre_b_net.split('.')[:-1] | join('.') }}"
     gre_a_last: "{{ gre_a_net.split('.')[-1] | int }}"
     gre_b_last: "{{ gre_b_net.split('.')[-1] | int }}"
+
+- name: Compute gre peer octets
+  set_fact:
     gre_a_peer_last: "{{ ((gre_a_last + 1) % 256) }}"
     gre_b_peer_last: "{{ ((gre_b_last + 1) % 256) }}"
+
+- name: Debug computed octets
+  debug:
+    msg:
+      - "GRE A base: {{ gre_a_base }} last: {{ gre_a_last }} peer last: {{ gre_a_peer_last }}"
+      - "GRE B base: {{ gre_b_base }} last: {{ gre_b_last }} peer last: {{ gre_b_peer_last }}"
 
 # ---------------------------
 # Decide IP ownership
@@ -42,6 +65,10 @@
 - name: Leader decision
   set_fact:
     gre_is_leader: "{{ inventory_hostname < gre_peer_name }}"
+
+- name: Debug leader decision
+  debug:
+    msg: "GRE leader for pair {{ inventory_hostname }}/{{ gre_peer_name }} is {{ gre_is_leader }}"
 
 - name: Assign IPs (leader)
   set_fact:
@@ -58,6 +85,12 @@
     gre_b_local: "{{ gre_b_base ~ '.' ~ (gre_b_peer_last | string) ~ '/' ~ gre_prefix_len }}"
     gre_b_peer: "{{ gre_b_base ~ '.' ~ (gre_b_last | string) ~ '/' ~ gre_prefix_len }}"
   when: not gre_is_leader
+
+- name: Debug assigned IPs
+  debug:
+    msg:
+      - "GRE A local: {{ gre_a_local }} peer: {{ gre_a_peer }}"
+      - "GRE B local: {{ gre_b_local }} peer: {{ gre_b_peer }}"
 
 # ---------------------------
 # Tunnel names
