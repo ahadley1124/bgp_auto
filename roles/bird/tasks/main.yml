@@ -59,6 +59,12 @@
     dest: /etc/bird/generated/ospf.conf
   notify: reload bird
 
+- name: Deploy connected route imports
+  template:
+    src: direct.conf.j2
+    dest: /etc/bird/generated/direct.conf
+  notify: reload bird
+
 - name: Deploy BFD
   template:
     src: bfd.conf.j2

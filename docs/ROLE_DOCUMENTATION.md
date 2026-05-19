@@ -103,7 +103,7 @@ Configures BIRD Internet Routing Daemon for BGP, OSPF, and BFD.
 
 - Discovers all router peers in NetBox dynamically
 - Generates full-mesh or route-reflector iBGP topology
-- Configures OSPF for loopback reachability
+- Configures OSPF for loopback reachability and exports the managed local address for BGP/OSPF
 - Enables BFD for fast failure detection
 
 ### BIRD Prerequisites
@@ -136,14 +136,27 @@ protocol bgp ibgp_router02 {
 #### File: `ospf.conf`
 
 ```text
-protocol ospf v3 ospf_v6 {
-    ipv6 {
+protocol ospf v2 ospf_underlay {
+  ipv4 {
+    table master4;
         import all;
         export all;
     };
     area 0 {
-        interface "lo" { stub yes; };
+    interface "wg*" {
+      type pointopoint;
+      hello 1;
+      dead 4;
     };
+    };
+}
+```
+
+#### File: `direct.conf`
+
+```text
+protocol direct local_connected {
+  interface "lo", "local";
 }
 ```
 
@@ -165,6 +178,7 @@ protocol bfd {
 - `loopback_ip` - Router loopback IP from `netbox_cf_loopback_ip`
 - `netbox_cf_bgp_role` - `client` or `rr` for route reflector
 - `netbox_cf_ospf_enabled` - Enable OSPF, default `true`
+- `local_ip` - Managed local service IP, default `23.190.216.10`
 
 #### Discovered at Runtime
 

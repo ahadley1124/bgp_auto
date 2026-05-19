@@ -6,7 +6,7 @@ protocol ospf v2 ospf_underlay {
     ipv4 {
         table master4;
         import all;
-        export none;
+        export all;
     };
 
     area 0 {

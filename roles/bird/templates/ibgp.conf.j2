@@ -14,7 +14,10 @@ protocol bgp ibgp_{{ peer }} {
     ipv4 {
         table master4;
         import all;
-        export all;
+        export filter {
+            if source = RTS_DEVICE && ifname = "local" then accept;
+            reject;
+        };
     };
 
     ipv6 {
