@@ -50,7 +50,7 @@
 - name: Debug computed octets
   debug:
     msg:
-  - "GRE base: {{ gre_base }} last: {{ gre_last }} peer last: {{ gre_peer_last }}"
+      - "GRE base: {{ gre_base }} last: {{ gre_last }} peer last: {{ gre_peer_last }}"
 
 # ---------------------------
 # Decide IP ownership
@@ -79,7 +79,7 @@
 - name: Debug assigned IPs
   debug:
     msg:
-  - "GRE local: {{ gre_local }} peer: {{ gre_peer }}"
+      - "GRE local: {{ gre_local }} peer: {{ gre_peer }}"
 
 # ---------------------------
 # Tunnel names
