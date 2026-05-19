@@ -1,285 +1,92 @@
-# Get loopback IP from NetBox
-- name: Validate NetBox credentials for GRE
-  ansible.builtin.assert:
-    that:
-      - (lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true)) | length > 0
-      - lookup('env', 'NETBOX_TOKEN') | length > 0
-    fail_msg: NETBOX_API (or NETBOX_URL) and NETBOX_TOKEN must be set to query NetBox for GRE configuration.
+---
+# ---------------------------
+# Pair identity
+# ---------------------------
 
-- name: Get loopback interface
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/dcim/interfaces/?device={{ inventory_hostname | urlencode }}&name=lo"
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-  register: lo_iface
+- name: Build pair identity
+  set_fact:
+    gre_pair_key: "{{ [inventory_hostname, gre_peer_name] | sort | join('-') }}"
 
-- name: Get loopback IP address
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/ip-addresses/?interface_id={{ lo_iface.json.results[0].id }}"
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-  register: lo_ip
-  when: lo_iface.json.results | length > 0
+# ---------------------------
+# Deterministic offset
+# ---------------------------
 
-- name: Set loopback IP fact
-  ansible.builtin.set_fact:
-    gre_loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
-  when: lo_ip.json.results | length > 0
+- name: Compute offset
+  set_fact:
+    gre_prefix_offset: "{{ (gre_pair_key | hash('sha1') | int(base=16)) % 65000 }}"
 
-- name: Get GRE tunnel prefixes
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/?role={{ gre_tunnel_prefix_role | urlencode }}&limit=0"
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-  register: gre_tunnel_prefix_lookup
+# ---------------------------
+# Compute /31s inside 10.255.0.0/16
+# ---------------------------
 
-- name: Select GRE parent prefix
-  ansible.builtin.set_fact:
-    gre_parent_prefix: "{{ (gre_tunnel_prefix_lookup.json.results | default([]) | rejectattr('prefix', 'match', '^.*/31$') | sort(attribute='prefix') | list)[0] }}"
-  when: (gre_tunnel_prefix_lookup.json.results | default([]) | rejectattr('prefix', 'match', '^.*/31$') | list | length) > 0
-- name: Compute deterministic description and GRE /31 prefix values
-  ansible.builtin.set_fact:
-    gre_pair_description: "{{ [inventory_hostname, gre_peer_name] | sort | join('-') }}"
-    gre_prefix_offset: "{{ ansible_play_hosts_all.index(inventory_hostname) * 4 }}"
-    gre_tunnel_prefix_a_value: >-
-      {{ lookup('pipe', 'python3 -c "import ipaddress; p=ipaddress.ip_network(\'%s\'); o=%d; print(ipaddress.ip_network((int(p.network_address)+o, 31), strict=False))"' % (gre_parent_prefix.prefix, (ansible_play_hosts_all.index(inventory_hostname) * 4))) }}
-    gre_tunnel_prefix_b_value: >-
-      {{ lookup('pipe', 'python3 -c "import ipaddress; p=ipaddress.ip_network(\'%s\'); o=%d; print(ipaddress.ip_network((int(p.network_address)+o, 31), strict=False))"' % (gre_parent_prefix.prefix, (ansible_play_hosts_all.index(inventory_hostname) * 4) + 2)) }}
-  when: gre_parent_prefix is defined and gre_peer_name is defined
+- name: Compute GRE subnets
+  set_fact:
+    gre_octet2: "{{ (gre_prefix_offset // 256) % 256 }}"
+    gre_octet3: "{{ gre_prefix_offset % 256 }}"
+    gre_prefix_a: "10.255.{{ gre_octet2 }}.{{ gre_octet3 }}/31"
+    gre_prefix_b: "10.255.{{ gre_octet2 }}.{{ (gre_octet3 + 2) % 256 }}/31"
 
-- name: Query existing GRE prefix A
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/?prefix={{ gre_tunnel_prefix_a_value | urlencode }}&limit=0"
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-  register: existing_gre_prefix_a
-  when: gre_tunnel_prefix_a_value is defined
+# ---------------------------
+# Leader decision
+# ---------------------------
 
-- name: Query existing GRE prefix B
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/?prefix={{ gre_tunnel_prefix_b_value | urlencode }}&limit=0"
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-  register: existing_gre_prefix_b
-  when: gre_tunnel_prefix_b_value is defined
+- name: Determine leader
+  set_fact:
+    gre_is_leader: "{{ inventory_hostname < gre_peer_name }}"
 
-- name: Reuse existing GRE prefix A if found
-  ansible.builtin.set_fact:
-    gre_prefix_a_id: "{{ existing_gre_prefix_a.json.results[0].id }}"
-  when:
-    - existing_gre_prefix_a is defined
-    - (existing_gre_prefix_a.json.results | default([]) | length) > 0
-    - (gre_prefix_a_id | default('') | string | length) == 0
+# ---------------------------
+# Assign IPs
+# ---------------------------
 
-- name: Reuse existing GRE prefix B if found
-  ansible.builtin.set_fact:
-    gre_prefix_b_id: "{{ existing_gre_prefix_b.json.results[0].id }}"
-  when:
-    - existing_gre_prefix_b is defined
-    - (existing_gre_prefix_b.json.results | default([]) | length) > 0
-    - (gre_prefix_b_id | default('') | string | length) == 0
+- name: Assign GRE IPs (leader)
+  set_fact:
+    gre_a_local: "{{ gre_prefix_a | ipaddr('network') }}"
+    gre_a_peer: "{{ gre_prefix_a | ipaddr('broadcast') }}"
+    gre_b_local: "{{ gre_prefix_b | ipaddr('network') }}"
+    gre_b_peer: "{{ gre_prefix_b | ipaddr('broadcast') }}"
+  when: gre_is_leader
 
-- debug:
-    msg:
-      gre_parent_prefix: "{{ gre_parent_prefix | default('UNDEFINED') }}"
-      gre_peer_name: "{{ gre_peer_name | default('UNDEFINED') }}"
+- name: Assign GRE IPs (non-leader)
+  set_fact:
+    gre_a_local: "{{ gre_prefix_a | ipaddr('broadcast') }}"
+    gre_a_peer: "{{ gre_prefix_a | ipaddr('network') }}"
+    gre_b_local: "{{ gre_prefix_b | ipaddr('broadcast') }}"
+    gre_b_peer: "{{ gre_prefix_b | ipaddr('network') }}"
+  when: not gre_is_leader
 
+# ---------------------------
+# Tunnel names
+# ---------------------------
 
-- name: Create GRE prefix A
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/"
-    method: POST
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-    body_format: json
-    body:
-      prefix: "{{ gre_tunnel_prefix_a_value }}"
-      parent: "{{ gre_parent_prefix.id }}"
-      description: "{{ gre_pair_description }}"
-    return_content: true
-  register: created_prefix_a
-  when:
-    - gre_tunnel_prefix_a_value is defined
-    - (gre_prefix_a_id | default('') | string | length) == 0
-
-- name: Create GRE prefix B
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/"
-    method: POST
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-    body_format: json
-    body:
-      prefix: "{{ gre_tunnel_prefix_b_value }}"
-      parent: "{{ gre_parent_prefix.id }}"
-      description: "{{ gre_pair_description }}"
-    return_content: true
-  register: created_prefix_b
-  when:
-    - gre_tunnel_prefix_b_value is defined
-    - (gre_prefix_b_id | default('') | string | length) == 0
-
-- name: Record created GRE prefix A id
-  ansible.builtin.set_fact:
-    gre_prefix_a_id: >-
-      {{
-        (created_prefix_a.json | default({})).get('id')
-        or (created_prefix_a | default({})).get('id')
-        or ''
-      }}
-  when:
-    - created_prefix_a is defined
-    - (gre_prefix_a_id | default('') | string | length) == 0
-
-- name: Validate GRE prefix A creation
-  ansible.builtin.assert:
-    that:
-      - (created_prefix_a | default({})).get('json') is mapping
-      - (created_prefix_a.json | default({})).get('id') | default('') | length > 0
-    fail_msg: >-
-      GRE prefix A creation failed:
-      {{
-        (created_prefix_a | default({}))
-        | to_nice_json
-      }}
-  when: created_prefix_a is defined
-
-- name: Record created GRE prefix B id
-  ansible.builtin.set_fact:
-    gre_prefix_b_id: >-
-      {{
-        (created_prefix_b.json | default({})).get('id')
-        or (created_prefix_b | default({})).get('id')
-        or ''
-      }}
-  when:
-    - created_prefix_b is defined
-    - (gre_prefix_b_id | default('') | string | length) == 0
-
-- name: Debug GRE prefix resolution
-  ansible.builtin.debug:
-    msg:
-      inventory_hostname: "{{ inventory_hostname }}"
-      gre_peer_name: "{{ gre_peer_name | default('') }}"
-      gre_parent_prefix: "{{ gre_parent_prefix.prefix | default('') }}"
-      gre_tunnel_prefix_a_value: "{{ gre_tunnel_prefix_a_value | default('') }}"
-      gre_tunnel_prefix_b_value: "{{ gre_tunnel_prefix_b_value | default('') }}"
-      gre_prefix_a_id: "{{ gre_prefix_a_id | default('') }}"
-      gre_prefix_b_id: "{{ gre_prefix_b_id | default('') }}"
-
-- name: Ensure GRE prefix ids are available
-  ansible.builtin.assert:
-    that:
-      - gre_prefix_a_id is defined
-      - gre_prefix_b_id is defined
-      - (gre_prefix_a_id | string | length) > 0
-      - (gre_prefix_b_id | string | length) > 0
-    fail_msg: "Unable to determine GRE prefix ids for {{ inventory_hostname }} and {{ gre_peer_name | default('unknown') }}."
-
-- name: Set GRE prefix A description
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_a_id }}/"
-    method: PATCH
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-    body_format: json
-    body:
-      description: "{{ gre_pair_description }}"
-    return_content: true
-  when: gre_pair_description is defined
-
-- name: Set GRE prefix B description
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_b_id }}/"
-    method: PATCH
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-    body_format: json
-    body:
-      description: "{{ gre_pair_description }}"
-    return_content: true
-  when: gre_pair_description is defined
-
-- name: Allocate tunnel IP pair A from GRE prefix A
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_a_id }}/available-ips/"
-    method: POST
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-    body_format: json
-    body:
-      - description: "GRE tunnel A local IP for {{ inventory_hostname }}"
-      - description: "GRE tunnel A peer IP for {{ inventory_hostname }}"
-    return_content: true
-  register: tunnel_a
-  when:
-    - gre_prefix_a_id is defined
-    - (gre_prefix_a_id | string | length) > 0
-
-- name: Allocate tunnel IP pair B from GRE prefix B
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_b_id }}/available-ips/"
-    method: POST
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-    body_format: json
-    body:
-      - description: "GRE tunnel B local IP for {{ inventory_hostname }}"
-      - description: "GRE tunnel B peer IP for {{ inventory_hostname }}"
-    return_content: true
-  register: tunnel_b
-  when:
-    - gre_prefix_b_id is defined
-    - (gre_prefix_b_id | string | length) > 0
-
-- name: Parse tunnel IP responses
-  ansible.builtin.set_fact:
-    tunnel_a_ips: "{{ tunnel_a.json | default(tunnel_a.content | default('[]') | from_json) }}"
-    tunnel_b_ips: "{{ tunnel_b.json | default(tunnel_b.content | default('[]') | from_json) }}"
-
-- name: Set tunnel IP facts
-  ansible.builtin.assert:
-    that:
-      - tunnel_a_ips | length >= 2
-      - tunnel_b_ips | length >= 2
-    fail_msg: >-
-      NetBox did not return two IPs for one of the selected /31 GRE prefixes.
-
-- name: Store tunnel IP facts
-  ansible.builtin.set_fact:
-    gre_a_local: "{{ tunnel_a_ips[0].address }}"
-    gre_a_peer: "{{ tunnel_a_ips[1].address }}"
-    gre_b_local: "{{ tunnel_b_ips[0].address }}"
-    gre_b_peer: "{{ tunnel_b_ips[1].address }}"
-
-- name: Configure loopback interface
-  ansible.builtin.shell: |
-    ip addr add {{ gre_loopback_ip }}/32 dev lo || true
-    ip link set lo up
-  when: gre_loopback_ip is defined
-  changed_when: true
-
-- name: Set GRE tunnel names
-  ansible.builtin.set_fact:
+- name: Set tunnel names
+  set_fact:
     gre_tunnel_name_a: "{{ gre_peer_name }}-gre"
     gre_tunnel_name_b: "{{ gre_peer_name }}-gre-b"
-  when: gre_peer_name is defined
 
-# Configure GRE tunnels
-- name: Configure GRE tunnel A
-  ansible.builtin.shell: |
-    ip tunnel add {{ gre_tunnel_name_a | default('gre-a') }} mode gre local {{ gre_loopback_ip }} remote {{ hostvars[gre_peer_name]['gre_loopback_ip'] }} ttl 255 || true
-    ip addr add {{ gre_a_local }} dev {{ gre_tunnel_name_a | default('gre-a') }} || true
-    ip link set {{ gre_tunnel_name_a | default('gre-a') }} up
-  when: (gre_loopback_ip is defined and gre_peer_name is defined and gre_a_local is defined) or (gre_force_create | default(false))
-  changed_when: true
-  notify: Restart GRE tunnels
+# ---------------------------
+# Configure loopback
+# ---------------------------
 
-- name: Configure GRE tunnel B
-  ansible.builtin.shell: |
-    ip tunnel add {{ gre_tunnel_name_b | default('gre-b') }} mode gre local {{ gre_loopback_ip }} remote {{ hostvars[gre_peer_name]['gre_loopback_ip'] }} ttl 255 || true
-    ip addr add {{ gre_b_local }} dev {{ gre_tunnel_name_b | default('gre-b') }} || true
-    ip link set {{ gre_tunnel_name_b | default('gre-b') }} up
-  when: (gre_loopback_ip is defined and gre_peer_name is defined and gre_b_local is defined) or (gre_force_create | default(false))
+- name: Ensure loopback up
+  shell: |
+    ip addr add {{ gre_loopback_ip }}/32 dev lo || true
+    ip link set lo up
   changed_when: true
-  notify: Restart GRE tunnels
+
+# ---------------------------
+# Configure GRE
+# ---------------------------
+
+- name: Configure GRE A
+  shell: |
+    ip tunnel add {{ gre_tunnel_name_a }} mode gre local {{ gre_loopback_ip }} remote {{ hostvars[gre_peer_name]['gre_loopback_ip'] }} ttl 255 || true
+    ip addr add {{ gre_a_local }}/31 dev {{ gre_tunnel_name_a }} || true
+    ip link set {{ gre_tunnel_name_a }} up
+  changed_when: true
+
+- name: Configure GRE B
+  shell: |
+    ip tunnel add {{ gre_tunnel_name_b }} mode gre local {{ gre_loopback_ip }} remote {{ hostvars[gre_peer_name]['gre_loopback_ip'] }} ttl 255 || true
+    ip addr add {{ gre_b_local }}/31 dev {{ gre_tunnel_name_b }} || true
+    ip link set {{ gre_tunnel_name_b }} up
+  changed_when: true

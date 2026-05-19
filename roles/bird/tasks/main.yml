@@ -1,46 +1,73 @@
----
-# ---------------------------
-# Get loopback IP from NetBox
-# ---------------------------
+- name: Ensure BIRD directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+  loop:
+    - /etc/bird
+    - /etc/bird/generated
 
-- name: Get loopback interface
-  ansible.builtin.uri:
-    url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/dcim/interfaces/?device={{ inventory_hostname | urlencode }}&name=lo"
-    headers:
-      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
-  register: lo_iface
+# ---- Build topology ----
 
-- name: Get loopback IP
-  ansible.builtin.uri:
-    url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/ipam/ip-addresses/?interface_id={{ lo_iface.json.results[0].id }}"
-    headers:
-      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
-  register: lo_ip
-  when: lo_iface.json.results | length > 0
-
-- name: Set loopback IP fact
-  ansible.builtin.set_fact:
-    gre_loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
-  when: lo_ip.json.results | length > 0
-
-# ---------------------------
-# Use BGP peers
-# ---------------------------
-
-- name: Set GRE peers
+- name: Build full node list
   set_fact:
-    gre_peers: "{{ effective_bgp_peers | default([]) }}"
+    all_nodes: >-
+      {{ hostvars
+         | dict2items
+         | selectattr('value.device_role', 'defined')
+         | selectattr('value.device_role.slug', 'equalto', 'router')
+         | map(attribute='key')
+         | list }}
 
-- name: Skip if no peers
-  meta: end_host
-  when: gre_peers | length == 0
+- name: Build iBGP peer list (exclude self)
+  set_fact:
+    bgp_peers: "{{ all_nodes | difference([inventory_hostname]) }}"
 
-# ---------------------------
-# Configure GRE tunnels
-# ---------------------------
+# ---- Optional: Route reflector logic ----
 
-- name: Configure GRE per peer
-  include_tasks: gre_peer.yml
-  loop: "{{ gre_peers }}"
-  loop_control:
-    loop_var: gre_peer_name
+- name: Identify route reflectors
+  set_fact:
+    route_reflectors: >-
+      {{ all_nodes
+         | map('extract', hostvars)
+         | selectattr('netbox_cf_bgp_role', 'equalto', 'rr')
+         | map(attribute='inventory_hostname')
+         | list }}
+
+- name: Select effective BGP peers
+  set_fact:
+    effective_bgp_peers: "{{ bgp_peers if (netbox_cf_bgp_role | default('client')) == 'rr' else (route_reflectors if (route_reflectors | length > 0) else bgp_peers) }}"
+
+# ---- Deploy configs ----
+
+- name: Deploy BGP (iBGP mesh / RR aware)
+  template:
+    src: ibgp.conf.j2
+    dest: /etc/bird/generated/ibgp.conf
+  notify: reload bird
+
+- name: Deploy OSPF
+  template:
+    src: ospf.conf.j2
+    dest: /etc/bird/generated/ospf.conf
+  notify: reload bird
+
+- name: Deploy BFD
+  template:
+    src: bfd.conf.j2
+    dest: /etc/bird/generated/bfd.conf
+  notify: reload bird
+
+# ---- Validate before reload ----
+
+- name: Validate BIRD config
+  command: bird -p -c /etc/bird/bird.conf
+  register: bird_check
+  changed_when: false
+  failed_when: bird_check.rc != 0
+
+# roles/bird/handlers/main.yml
+- name: reload bird
+  systemd:
+    name: bird
+    state: reloaded
