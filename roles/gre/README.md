@@ -8,7 +8,7 @@ This role configures Generic Routing Encapsulation (GRE) tunnels between edge ro
 - Discovers GRE /31 prefixes from NetBox by role tag
 - Allocates tunnel IP pairs from NetBox automatically
 - Configures GRE tunnel interfaces
-- Supports multiple tunnel pairs (A and B)
+ - Configures a single GRE tunnel per peer (future gre6 migration planned)
 
 ## Requirements
 
@@ -48,7 +48,5 @@ This role configures Generic Routing Encapsulation (GRE) tunnels between edge ro
 The role sets the following facts that can be used in subsequent tasks:
 
 - `gre_loopback_ip`: Loopback IP address from NetBox
-- `gre_a_local`: Local IP for tunnel A
-- `gre_a_peer`: Peer IP for tunnel A
-- `gre_b_local`: Local IP for tunnel B
-- `gre_b_peer`: Peer IP for tunnel B
+ - `gre_local`: Local IP for the tunnel
+ - `gre_peer`: Peer IP for the tunnel

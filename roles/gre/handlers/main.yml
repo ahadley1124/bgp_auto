@@ -1,7 +1,5 @@
 - name: Restart GRE tunnels
   ansible.builtin.shell: |
     ip link set gre-a down 2>/dev/null || true
-    ip link set gre-b down 2>/dev/null || true
     ip tunnel del gre-a 2>/dev/null || true
-    ip tunnel del gre-b 2>/dev/null || true
   changed_when: true

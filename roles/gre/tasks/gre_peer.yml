@@ -25,8 +25,7 @@
 
 - name: Build /31 networks
   set_fact:
-    gre_prefix_a: "10.255.{{ (gre_offset // 256) % 256 }}.{{ gre_offset % 256 }}/31"
-    gre_prefix_b: "10.255.{{ (gre_offset // 256) % 256 }}.{{ (gre_offset % 256 + 2) % 256 }}/31"
+    gre_prefix: "10.255.{{ (gre_offset // 256) % 256 }}.{{ gre_offset % 256 }}/31"
 
 - name: Debug /31 networks
   debug:
@@ -36,27 +35,22 @@
 
 - name: Compute gre base nets and prefix
   set_fact:
-    gre_a_net: "{{ gre_prefix_a.split('/')[0] }}"
-    gre_b_net: "{{ gre_prefix_b.split('/')[0] }}"
-    gre_prefix_len: "{{ gre_prefix_a.split('/')[1] }}"
+    gre_net: "{{ gre_prefix.split('/')[0] }}"
+    gre_prefix_len: "{{ gre_prefix.split('/')[1] }}"
 
 - name: Compute gre base nets and last octets
   set_fact:
-    gre_a_base: "{{ gre_a_net.split('.')[:-1] | join('.') }}"
-    gre_b_base: "{{ gre_b_net.split('.')[:-1] | join('.') }}"
-    gre_a_last: "{{ gre_a_net.split('.')[-1] | int }}"
-    gre_b_last: "{{ gre_b_net.split('.')[-1] | int }}"
+    gre_base: "{{ gre_net.split('.')[:-1] | join('.') }}"
+    gre_last: "{{ gre_net.split('.')[-1] | int }}"
 
 - name: Compute gre peer octets
   set_fact:
-    gre_a_peer_last: "{{ ((gre_a_last + 1) % 256) }}"
-    gre_b_peer_last: "{{ ((gre_b_last + 1) % 256) }}"
+    gre_peer_last: "{{ ((gre_last + 1) % 256) }}"
 
 - name: Debug computed octets
   debug:
     msg:
-      - "GRE A base: {{ gre_a_base }} last: {{ gre_a_last }} peer last: {{ gre_a_peer_last }}"
-      - "GRE B base: {{ gre_b_base }} last: {{ gre_b_last }} peer last: {{ gre_b_peer_last }}"
+  - "GRE base: {{ gre_base }} last: {{ gre_last }} peer last: {{ gre_peer_last }}"
 
 # ---------------------------
 # Decide IP ownership
@@ -72,25 +66,20 @@
 
 - name: Assign IPs (leader)
   set_fact:
-    gre_a_local: "{{ gre_a_base ~ '.' ~ (gre_a_last | string) ~ '/' ~ gre_prefix_len }}"
-    gre_a_peer: "{{ gre_a_base ~ '.' ~ (gre_a_peer_last | string) ~ '/' ~ gre_prefix_len }}"
-    gre_b_local: "{{ gre_b_base ~ '.' ~ (gre_b_last | string) ~ '/' ~ gre_prefix_len }}"
-    gre_b_peer: "{{ gre_b_base ~ '.' ~ (gre_b_peer_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_local: "{{ gre_base ~ '.' ~ (gre_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_peer: "{{ gre_base ~ '.' ~ (gre_peer_last | string) ~ '/' ~ gre_prefix_len }}"
   when: gre_is_leader
 
 - name: Assign IPs (non-leader)
   set_fact:
-    gre_a_local: "{{ gre_a_base ~ '.' ~ (gre_a_peer_last | string) ~ '/' ~ gre_prefix_len }}"
-    gre_a_peer: "{{ gre_a_base ~ '.' ~ (gre_a_last | string) ~ '/' ~ gre_prefix_len }}"
-    gre_b_local: "{{ gre_b_base ~ '.' ~ (gre_b_peer_last | string) ~ '/' ~ gre_prefix_len }}"
-    gre_b_peer: "{{ gre_b_base ~ '.' ~ (gre_b_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_local: "{{ gre_base ~ '.' ~ (gre_peer_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_peer: "{{ gre_base ~ '.' ~ (gre_last | string) ~ '/' ~ gre_prefix_len }}"
   when: not gre_is_leader
 
 - name: Debug assigned IPs
   debug:
     msg:
-      - "GRE A local: {{ gre_a_local }} peer: {{ gre_a_peer }}"
-      - "GRE B local: {{ gre_b_local }} peer: {{ gre_b_peer }}"
+  - "GRE local: {{ gre_local }} peer: {{ gre_peer }}"
 
 # ---------------------------
 # Tunnel names
@@ -98,19 +87,37 @@
 
 - name: Set tunnel names
   set_fact:
-    gre_tunnel_name_a: "{{ gre_peer_name }}-gre"
-    gre_tunnel_name_b: "{{ gre_peer_name }}-gre-b"
+    gre_tunnel_name: "{{ gre_peer_name }}-gre"
 
 - name: Set tunnel cleanup list
   set_fact:
     gre_tunnel_cleanup:
       - "{{ gre_peer_name }}-gre"
-      - "{{ gre_peer_name }}-gre-a"
-      - "{{ gre_peer_name }}-gre-b"
-
 - name: Delete stale GRE interfaces
+
+# Diagnostic: capture existing GRE tunnel and link state (non-destructive)
+- name: Capture existing GRE tunnels and links
   shell: |
-    ip link show dev {{ item }} >/dev/null 2>&1 && ip link delete {{ item }} || true
+    ip -d tunnel show || true
+    ip -o link show || true
+  register: gre_state
+  changed_when: false
+
+- name: Debug existing GRE state
+  debug:
+    var: gre_state.stdout_lines
+
+- name: Ensure stale GRE interfaces removed (with retries)
+  shell: |
+    if ip link show dev {{ item }} >/dev/null 2>&1; then
+      ip link delete {{ item }} || true
+    fi
+    ip link show dev {{ item }} >/dev/null 2>&1
+  register: _del_rc
+  failed_when: false
+  retries: 5
+  delay: 1
+  until: _del_rc.rc != 0
   loop: "{{ gre_tunnel_cleanup }}"
   changed_when: true
 
@@ -129,17 +136,34 @@
 # ---------------------------
 
 - name: Configure GRE A
-  shell: |
-    ip link show dev {{ gre_tunnel_name_a }} >/dev/null 2>&1 && ip tunnel del {{ gre_tunnel_name_a }} || true
-    ip tunnel add {{ gre_tunnel_name_a }} mode gre local {{ ansible_host }} remote {{ hostvars[gre_peer_name]['ansible_host'] }} ttl 255 || true
-    ip addr add {{ gre_a_local }} dev {{ gre_tunnel_name_a }} || true
-    ip link set {{ gre_tunnel_name_a }} up
-  changed_when: true
+  block:
+    - name: Ensure {{ gre_tunnel_name }} absent before creation
+      shell: ip link show dev {{ gre_tunnel_name }} >/dev/null 2>&1 && ip tunnel del {{ gre_tunnel_name }} || true
+      failed_when: false
+      changed_when: true
 
-- name: Configure GRE B
-  shell: |
-    ip link show dev {{ gre_tunnel_name_b }} >/dev/null 2>&1 && ip tunnel del {{ gre_tunnel_name_b }} || true
-    ip tunnel add {{ gre_tunnel_name_b }} mode gre local {{ ansible_host }} remote {{ hostvars[gre_peer_name]['ansible_host'] }} ttl 255 || true
-    ip addr add {{ gre_b_local }} dev {{ gre_tunnel_name_b }} || true
-    ip link set {{ gre_tunnel_name_b }} up
-  changed_when: true
+    - name: Create GRE (with retries)
+      shell: |
+        ip tunnel add {{ gre_tunnel_name }} mode gre local {{ ansible_host }} remote {{ hostvars[gre_peer_name]['ansible_host'] }} ttl 255
+      register: gre_add
+      retries: 3
+      delay: 1
+      until: gre_add.rc == 0
+      failed_when: gre_add.rc != 0
+      changed_when: true
+
+    - name: Verify GRE device exists
+      shell: ip link show dev {{ gre_tunnel_name }} >/dev/null 2>&1
+      register: gre_verify
+      retries: 3
+      delay: 1
+      until: gre_verify.rc == 0
+      failed_when: gre_verify.rc != 0
+
+    - name: Assign IP to GRE
+      shell: ip addr add {{ gre_local }} dev {{ gre_tunnel_name }} || true
+      changed_when: true
+
+    - name: Bring GRE up
+      shell: ip link set {{ gre_tunnel_name }} up
+      changed_when: true
