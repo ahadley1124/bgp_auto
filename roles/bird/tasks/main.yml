@@ -1,16 +1,5 @@
 ---
 # ---------------------------
-# Validate prerequisites
-# ---------------------------
-
-- name: Validate NetBox credentials
-  ansible.builtin.assert:
-    that:
-      - (lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true)) | length > 0
-      - lookup('env', 'NETBOX_TOKEN') | length > 0
-    fail_msg: "NETBOX_API/NETBOX_URL and NETBOX_TOKEN must be set"
-
-# ---------------------------
 # Get loopback IP from NetBox
 # ---------------------------
 
@@ -35,39 +24,23 @@
   when: lo_ip.json.results | length > 0
 
 # ---------------------------
-# Use BGP peers as GRE peers
+# Use BGP peers
 # ---------------------------
 
-- name: Set GRE peers from BGP
-  ansible.builtin.set_fact:
+- name: Set GRE peers
+  set_fact:
     gre_peers: "{{ effective_bgp_peers | default([]) }}"
 
-- name: Stop if no GRE peers
-  ansible.builtin.meta: end_host
+- name: Skip if no peers
+  meta: end_host
   when: gre_peers | length == 0
 
 # ---------------------------
-# Get GRE parent prefix
-# ---------------------------
-
-- name: Get GRE parent prefix
-  ansible.builtin.uri:
-    url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/ipam/prefixes/?role=gre-tunnels&limit=0"
-    headers:
-      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
-  register: gre_prefix_lookup
-
-- name: Select GRE parent prefix
-  ansible.builtin.set_fact:
-    gre_parent_prefix: "{{ gre_prefix_lookup.json.results[0] }}"
-  when: gre_prefix_lookup.json.results | length > 0
-
-# ---------------------------
-# Loop over peers
+# Configure GRE tunnels
 # ---------------------------
 
 - name: Configure GRE per peer
-  ansible.builtin.include_tasks: gre_peer.yml
+  include_tasks: gre_peer.yml
   loop: "{{ gre_peers }}"
   loop_control:
     loop_var: gre_peer_name
