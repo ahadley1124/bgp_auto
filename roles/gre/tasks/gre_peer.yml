@@ -30,8 +30,7 @@
 - name: Debug /31 networks
   debug:
     msg:
-      - "GRE prefix A: {{ gre_prefix_a }}"
-      - "GRE prefix B: {{ gre_prefix_b }}"
+      - "GRE prefix: {{ gre_prefix }}"
 
 - name: Compute gre base nets and prefix
   set_fact:
