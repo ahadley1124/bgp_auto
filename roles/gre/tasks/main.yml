@@ -115,14 +115,32 @@
 
 - name: Record created GRE prefix A id
   ansible.builtin.set_fact:
-    gre_prefix_a_id: "{{ created_prefix_a.json.id | default(created_prefix_a.id, true) }}"
+    gre_prefix_a_id: >-
+      {{
+        (created_prefix_a.json | default({})).get('id')
+        or (created_prefix_a | default({})).get('id')
+        or ''
+      }}
   when:
     - created_prefix_a is defined
     - (gre_prefix_a_id | default('') | string | length) == 0
 
+- name: Validate GRE prefix A creation
+  ansible.builtin.assert:
+    that:
+      - created_prefix_a.json is defined
+      - created_prefix_a.json.id is defined
+    fail_msg: "GRE prefix A creation failed: {{ created_prefix_a.json }}"
+  when: created_prefix_a is defined
+
 - name: Record created GRE prefix B id
   ansible.builtin.set_fact:
-    gre_prefix_b_id: "{{ created_prefix_b.json.id | default(created_prefix_b.id, true) }}"
+    gre_prefix_b_id: >-
+      {{
+        (created_prefix_b.json | default({})).get('id')
+        or (created_prefix_b | default({})).get('id')
+        or ''
+      }}
   when:
     - created_prefix_b is defined
     - (gre_prefix_b_id | default('') | string | length) == 0
