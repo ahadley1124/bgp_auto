@@ -14,6 +14,11 @@
   set_fact:
     peers_from_cf: "{{ netbox_cf_peers | default(netbox_cf_wg_peers | default([], true), true) }}"
 
+# ---- Get loopback IP ----
+
+- name: Get loopback IP from NetBox
+  include_tasks: ../common/tasks/get_loopback_ip.yml
+
 # ---- Build topology ----
 
 - name: Build full node list

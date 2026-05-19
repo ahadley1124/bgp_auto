@@ -1,0 +1,21 @@
+---
+# Fetch loopback interface from NetBox and extract IP address.
+- name: Get loopback interface
+  uri:
+    url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/dcim/interfaces/?device={{ inventory_hostname | urlencode }}&name=lo"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+  register: lo_iface
+
+- name: Get loopback IP
+  ansible.builtin.uri:
+    url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/ipam/ip-addresses/?interface_id={{ lo_iface.json.results[0].id }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+  register: lo_ip
+  when: lo_iface.json.results | length > 0
+
+- name: Set loopback fact
+  set_fact:
+    loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
+  when: lo_ip.json.results | length > 0
