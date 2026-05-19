@@ -26,9 +26,7 @@
 # ---------------------------
 # Use BGP peers
 # ---------------------------
-
-- name: Set GRE peers
-
+# ---------------------------
 
 # ---- Build topology (reuse BGP peer selection logic so gre can run standalone) ----
 - name: Build full node list
