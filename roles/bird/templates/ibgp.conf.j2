@@ -4,7 +4,7 @@
 # =====================================
 
 {% for peer in effective_bgp_peers %}
-protocol bgp ibgp_{{ peer }} {
+protocol bgp ibgp_{{ peer | replace('-', '_') }} {
     local as {{ bgp_as | default(17290) }};
     neighbor {{ hostvars[peer].loopback_ip }} as {{ bgp_as | default(17290) }};
     source address {{ loopback_ip }};
