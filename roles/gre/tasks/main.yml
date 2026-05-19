@@ -106,7 +106,7 @@
   ansible.builtin.set_fact:
     created_prefix_a: "{{ {'json': {'id': existing_gre_prefixes.json.results[0].id}} }}"
     created_prefix_b: "{{ {'json': {'id': existing_gre_prefixes.json.results[1].id}} }}"
-  when: gre_parent_prefix is defined and (existing_gre_prefixes.json.results | length) >= 2
+  when: gre_parent_prefix is defined and existing_gre_prefixes is defined and (existing_gre_prefixes.json.results | length) >= 2
 
 - name: Allocate 4 IPs from parent prefix when /31 prefixes are not present
   ansible.builtin.uri:
@@ -114,7 +114,7 @@
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
   register: gre_available_subs
-  when: gre_parent_prefix is defined and (existing_gre_prefixes.json.results | length) < 2
+  when: gre_parent_prefix is defined and (existing_gre_prefixes is not defined or (existing_gre_prefixes.json.results | length) < 2)
 
 - name: Ensure we have two available /31 sub-prefixes
   ansible.builtin.assert:
@@ -136,7 +136,7 @@
       description: "{{ gre_pair_description }}"
     return_content: true
   register: created_prefix_a
-  when: gre_parent_prefix is defined and gre_available_subs is defined and (existing_gre_prefixes.json.results | length) < 2
+  when: gre_parent_prefix is defined and gre_available_subs is defined and (existing_gre_prefixes is not defined or (existing_gre_prefixes.json.results | length) < 2)
 
 - name: Create child /31 prefix B
   ansible.builtin.uri:
@@ -151,7 +151,7 @@
       description: "{{ gre_pair_description }}"
     return_content: true
   register: created_prefix_b
-  when: gre_parent_prefix is defined and gre_available_subs is defined and (existing_gre_prefixes.json.results | length) < 2
+  when: gre_parent_prefix is defined and gre_available_subs is defined and (existing_gre_prefixes is not defined or (existing_gre_prefixes.json.results | length) < 2)
 
 - name: Allocate tunnel IP pair A from created prefix
   ansible.builtin.uri:
