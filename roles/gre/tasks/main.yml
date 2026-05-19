@@ -119,7 +119,7 @@
 - name: Ensure we have two available /31 sub-prefixes
   ansible.builtin.assert:
     that:
-      - (gre_available_subs.json.results | length) >= 2
+      - (gre_available_subs.json | default([]) | length) >= 2
     fail_msg: "Not enough available /31 sub-prefixes under parent {{ gre_parent_prefix.prefix }} to create GRE prefixes."
   when: gre_parent_prefix is defined and gre_available_subs is defined
 
@@ -131,7 +131,7 @@
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
     body_format: json
     body:
-      prefix: "{{ gre_available_subs.json.results[0].prefix }}"
+      prefix: "{{ gre_available_subs.json[0].prefix }}"
       parent: "{{ gre_parent_prefix.id }}"
       description: "{{ gre_pair_description }}"
     return_content: true
@@ -146,7 +146,7 @@
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
     body_format: json
     body:
-      prefix: "{{ gre_available_subs.json.results[1].prefix }}"
+      prefix: "{{ gre_available_subs.json[1].prefix }}"
       parent: "{{ gre_parent_prefix.id }}"
       description: "{{ gre_pair_description }}"
     return_content: true
