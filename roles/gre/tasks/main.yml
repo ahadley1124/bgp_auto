@@ -113,11 +113,24 @@
     gre_prefix_b_id: "{{ created_prefix_b.get('json', {}).get('id', created_prefix_b.get('id')) }}"
   when: created_prefix_b is defined and gre_prefix_b_id is not defined
 
+- name: Debug GRE prefix resolution
+  ansible.builtin.debug:
+    msg:
+      inventory_hostname: "{{ inventory_hostname }}"
+      gre_peer_name: "{{ gre_peer_name | default('') }}"
+      gre_parent_prefix: "{{ gre_parent_prefix.prefix | default('') }}"
+      gre_tunnel_prefix_a_value: "{{ gre_tunnel_prefix_a_value | default('') }}"
+      gre_tunnel_prefix_b_value: "{{ gre_tunnel_prefix_b_value | default('') }}"
+      gre_prefix_a_id: "{{ gre_prefix_a_id | default('') }}"
+      gre_prefix_b_id: "{{ gre_prefix_b_id | default('') }}"
+
 - name: Ensure GRE prefix ids are available
   ansible.builtin.assert:
     that:
       - gre_prefix_a_id is defined
       - gre_prefix_b_id is defined
+      - (gre_prefix_a_id | string | length) > 0
+      - (gre_prefix_b_id | string | length) > 0
     fail_msg: "Unable to determine GRE prefix ids for {{ inventory_hostname }} and {{ gre_peer_name | default('unknown') }}."
 
 - name: Set GRE prefix A description
@@ -155,6 +168,9 @@
       count: 2
     return_content: true
   register: tunnel_a
+  when:
+    - gre_prefix_a_id is defined
+    - (gre_prefix_a_id | string | length) > 0
 
 - name: Allocate tunnel IP pair B from GRE prefix B
   ansible.builtin.uri:
@@ -167,6 +183,9 @@
       count: 2
     return_content: true
   register: tunnel_b
+  when:
+    - gre_prefix_b_id is defined
+    - (gre_prefix_b_id | string | length) > 0
 
 - name: Parse tunnel IP responses
   ansible.builtin.set_fact:
