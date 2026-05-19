@@ -93,7 +93,6 @@
   set_fact:
     gre_tunnel_cleanup:
       - "{{ gre_peer_name }}-gre"
-- name: Delete stale GRE interfaces
 
 # Diagnostic: capture existing GRE tunnel and link state (non-destructive)
 - name: Capture existing GRE tunnels and links
