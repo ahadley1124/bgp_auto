@@ -30,18 +30,18 @@
 
 - name: Assign IPs (leader)
   set_fact:
-    gre_a_local: "{{ gre_prefix_a.split('/')[0] + '/' + gre_prefix_a.split('/')[1] }}"
-    gre_a_peer: "{{ (gre_prefix_a.split('/')[0].split('.')[:-1] | join('.') ) + '.' + ((gre_prefix_a.split('/')[0].split('.')[-1] | int + 1) % 256) + '/' + gre_prefix_a.split('/')[1] }}"
-    gre_b_local: "{{ gre_prefix_b.split('/')[0] + '/' + gre_prefix_b.split('/')[1] }}"
-    gre_b_peer: "{{ (gre_prefix_b.split('/')[0].split('.')[:-1] | join('.') ) + '.' + ((gre_prefix_b.split('/')[0].split('.')[-1] | int + 1) % 256) + '/' + gre_prefix_b.split('/')[1] }}"
+    gre_a_local: "{{ (gre_prefix_a | ipaddr('network')) ~ '/' ~ (gre_prefix_a.split('/')[1]) }}"
+    gre_a_peer: "{{ (gre_prefix_a | ipaddr('broadcast')) ~ '/' ~ (gre_prefix_a.split('/')[1]) }}"
+    gre_b_local: "{{ (gre_prefix_b | ipaddr('network')) ~ '/' ~ (gre_prefix_b.split('/')[1]) }}"
+    gre_b_peer: "{{ (gre_prefix_b | ipaddr('broadcast')) ~ '/' ~ (gre_prefix_b.split('/')[1]) }}"
   when: gre_is_leader
 
 - name: Assign IPs (non-leader)
   set_fact:
-    gre_a_local: "{{ (gre_prefix_a.split('/')[0].split('.')[:-1] | join('.') ) + '.' + ((gre_prefix_a.split('/')[0].split('.')[-1] | int + 1) % 256) + '/' + gre_prefix_a.split('/')[1] }}"
-    gre_a_peer: "{{ gre_prefix_a.split('/')[0] + '/' + gre_prefix_a.split('/')[1] }}"
-    gre_b_local: "{{ (gre_prefix_b.split('/')[0].split('.')[:-1] | join('.') ) + '.' + ((gre_prefix_b.split('/')[0].split('.')[-1] | int + 1) % 256) + '/' + gre_prefix_b.split('/')[1] }}"
-    gre_b_peer: "{{ gre_prefix_b.split('/')[0] + '/' + gre_prefix_b.split('/')[1] }}"
+    gre_a_local: "{{ (gre_prefix_a | ipaddr('broadcast')) ~ '/' ~ (gre_prefix_a.split('/')[1]) }}"
+    gre_a_peer: "{{ (gre_prefix_a | ipaddr('network')) ~ '/' ~ (gre_prefix_a.split('/')[1]) }}"
+    gre_b_local: "{{ (gre_prefix_b | ipaddr('broadcast')) ~ '/' ~ (gre_prefix_b.split('/')[1]) }}"
+    gre_b_peer: "{{ (gre_prefix_b | ipaddr('network')) ~ '/' ~ (gre_prefix_b.split('/')[1]) }}"
   when: not gre_is_leader
 
 # ---------------------------
