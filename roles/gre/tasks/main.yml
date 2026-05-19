@@ -118,7 +118,7 @@
     that:
       - gre_prefix_a_id is defined
       - gre_prefix_b_id is defined
-    fail_msg: "Unable to determine GRE prefix ids for {{ inventory_hostname }} and {{ gre_peer_name }}."
+    fail_msg: "Unable to determine GRE prefix ids for {{ inventory_hostname }} and {{ gre_peer_name | default('unknown') }}."
 
 - name: Set GRE prefix A description
   ansible.builtin.uri:
