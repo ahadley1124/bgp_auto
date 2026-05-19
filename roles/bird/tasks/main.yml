@@ -10,6 +10,10 @@
 - name: Get NetBox peers if not provided by inventory
   include_tasks: ../common/tasks/get_netbox_peers.yml
 
+- name: Normalize NetBox peers value
+  set_fact:
+    peers_from_cf: "{{ netbox_cf_peers | default(netbox_cf_wg_peers | default([], true), true) }}"
+
 # ---- Build topology ----
 
 - name: Build full node list
@@ -24,7 +28,7 @@
 
 - name: Build iBGP peer list (exclude self)
   set_fact:
-    bgp_peers: "{{ ((netbox_cf_peers | default(netbox_cf_wg_peers | default([])) | length > 0) | ternary((netbox_cf_peers | default(netbox_cf_wg_peers | default([]))), (all_nodes | difference([inventory_hostname])))) | difference([inventory_hostname]) }}"
+    bgp_peers: "{{ (peers_from_cf | length > 0) | ternary(peers_from_cf, (all_nodes | difference([inventory_hostname]))) | difference([inventory_hostname]) }}"
 
 # ---- Optional: Route reflector logic ----
 

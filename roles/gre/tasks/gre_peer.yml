@@ -17,10 +17,8 @@
 
 - name: Build /31 networks
   set_fact:
-    oct2: "{{ (gre_offset // 256) % 256 }}"
-    oct3: "{{ gre_offset % 256 }}"
-    gre_prefix_a: "10.255.{{ oct2 }}.{{ oct3 }}/31"
-    gre_prefix_b: "10.255.{{ oct2 }}.{{ (oct3 + 2) % 256 }}/31"
+    gre_prefix_a: "10.255.{{ (gre_offset // 256) % 256 }}.{{ gre_offset % 256 }}/31"
+    gre_prefix_b: "10.255.{{ (gre_offset // 256) % 256 }}.{{ (gre_offset % 256 + 2) % 256 }}/31"
 
 # ---------------------------
 # Decide IP ownership
