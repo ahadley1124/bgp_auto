@@ -12,4 +12,4 @@
 - name: Set `netbox_cf_peers` from NetBox custom fields when not present
   set_fact:
     netbox_cf_peers: "{{ netbox_device.json.results[0].custom_fields.peers | default(netbox_device.json.results[0].custom_fields.wg_peers | default([])) }}"
-  when: netbox_device.json.results | length > 0 and (netbox_cf_peers is not defined or (netbox_cf_peers | default([]) | length == 0))
+  when: netbox_device.json.results | length > 0 and (netbox_cf_peers is not defined or netbox_cf_peers is none or (netbox_cf_peers | length == 0))
