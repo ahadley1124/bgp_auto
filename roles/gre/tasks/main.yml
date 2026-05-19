@@ -159,7 +159,7 @@
 
 - name: Allocate tunnel IP pair A from GRE prefix A
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_a_id }}/available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_a_id }}available-ips/"
     method: POST
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
@@ -174,7 +174,7 @@
 
 - name: Allocate tunnel IP pair B from GRE prefix B
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_b_id }}/available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_b_id }}available-ips/"
     method: POST
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
