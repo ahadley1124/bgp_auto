@@ -30,9 +30,11 @@
 # ---- Build topology (reuse BGP peer selection logic so gre can run standalone) ----
 - name: Get NetBox peers if not provided by inventory
   include_tasks: ../../common/tasks/get_netbox_peers.yml
+
 - name: Normalize NetBox peers value
   set_fact:
     peers_from_cf: "{{ netbox_cf_peers | default(netbox_cf_wg_peers | default([], true), true) }}"
+
 - name: Build full node list
   set_fact:
     all_nodes: >-
