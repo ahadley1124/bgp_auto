@@ -11,11 +11,13 @@
   register: lo_iface
 
 - name: Get loopback IP
-  uri:
+  ansible.builtin.uri:
     url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/ipam/ip-addresses/?interface_id={{ lo_iface.json.results[0].id }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
   register: lo_ip
   when: lo_iface.json.results | length > 0
-
+  
 - name: Set loopback fact
   set_fact:
     gre_loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
