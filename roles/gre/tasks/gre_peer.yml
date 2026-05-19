@@ -101,6 +101,19 @@
     gre_tunnel_name_a: "{{ gre_peer_name }}-gre"
     gre_tunnel_name_b: "{{ gre_peer_name }}-gre-b"
 
+- name: Set tunnel cleanup list
+  set_fact:
+    gre_tunnel_cleanup:
+      - "{{ gre_peer_name }}-gre"
+      - "{{ gre_peer_name }}-gre-a"
+      - "{{ gre_peer_name }}-gre-b"
+
+- name: Delete stale GRE interfaces
+  shell: |
+    ip link show dev {{ item }} >/dev/null 2>&1 && ip link delete {{ item }} || true
+  loop: "{{ gre_tunnel_cleanup }}"
+  changed_when: true
+
 # ---------------------------
 # Loopback config
 # ---------------------------
