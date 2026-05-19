@@ -17,7 +17,7 @@
       Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
   register: lo_ip
   when: lo_iface.json.results | length > 0
-  
+
 - name: Set loopback fact
   set_fact:
     gre_loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
@@ -30,6 +30,34 @@
 - name: Set GRE peers
   set_fact:
     gre_peers: "{{ effective_bgp_peers | default([]) }}"
+
+# ---- Build topology (reuse BGP peer selection logic so gre can run standalone) ----
+- name: Build full node list
+  set_fact:
+    all_nodes: >-
+      {{ hostvars
+         | dict2items
+         | selectattr('value.device_role', 'defined')
+         | selectattr('value.device_role.slug', 'equalto', 'router')
+         | map(attribute='key')
+         | list }}
+
+- name: Build iBGP peer list (exclude self)
+  set_fact:
+    bgp_peers: "{{ all_nodes | difference([inventory_hostname]) }}"
+
+- name: Identify route reflectors
+  set_fact:
+    route_reflectors: >-
+      {{ all_nodes
+         | map('extract', hostvars)
+         | selectattr('netbox_cf_bgp_role', 'equalto', 'rr')
+         | map(attribute='inventory_hostname')
+         | list }}
+
+- name: Select effective BGP peers
+  set_fact:
+    effective_bgp_peers: "{{ bgp_peers if (netbox_cf_bgp_role | default('client')) == 'rr' else (route_reflectors if (route_reflectors | length > 0) else bgp_peers) }}"
 
 - name: Stop if no peers
   meta: end_host
