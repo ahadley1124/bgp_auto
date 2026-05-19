@@ -1,44 +1,36 @@
 ---
 # ---------------------------
-# Pair identity
+# Build pair identity
 # ---------------------------
 
-- name: Build pair identity
+- name: Create pair key
   set_fact:
     gre_pair_key: "{{ [inventory_hostname, gre_peer_name] | sort | join('-') }}"
 
 # ---------------------------
-# Deterministic offset
+# Deterministic subnet math
 # ---------------------------
 
-- name: Compute offset
+- name: Generate deterministic offset
   set_fact:
-    gre_prefix_offset: "{{ (gre_pair_key | hash('sha1') | int(base=16)) % 65000 }}"
+    gre_offset: "{{ (gre_pair_key | hash('sha1') | int(base=16)) % 60000 }}"
 
-# ---------------------------
-# Compute /31s inside 10.255.0.0/16
-# ---------------------------
-
-- name: Compute GRE subnets
+- name: Build /31 networks
   set_fact:
-    gre_octet2: "{{ (gre_prefix_offset // 256) % 256 }}"
-    gre_octet3: "{{ gre_prefix_offset % 256 }}"
-    gre_prefix_a: "10.255.{{ gre_octet2 }}.{{ gre_octet3 }}/31"
-    gre_prefix_b: "10.255.{{ gre_octet2 }}.{{ (gre_octet3 + 2) % 256 }}/31"
+    oct2: "{{ (gre_offset // 256) % 256 }}"
+    oct3: "{{ gre_offset % 256 }}"
+    gre_prefix_a: "10.255.{{ oct2 }}.{{ oct3 }}/31"
+    gre_prefix_b: "10.255.{{ oct2 }}.{{ (oct3 + 2) % 256 }}/31"
 
 # ---------------------------
-# Leader decision
+# Decide IP ownership
 # ---------------------------
 
-- name: Determine leader
+- name: Leader decision
   set_fact:
     gre_is_leader: "{{ inventory_hostname < gre_peer_name }}"
 
-# ---------------------------
-# Assign IPs
-# ---------------------------
-
-- name: Assign GRE IPs (leader)
+- name: Assign IPs (leader)
   set_fact:
     gre_a_local: "{{ gre_prefix_a | ipaddr('network') }}"
     gre_a_peer: "{{ gre_prefix_a | ipaddr('broadcast') }}"
@@ -46,7 +38,7 @@
     gre_b_peer: "{{ gre_prefix_b | ipaddr('broadcast') }}"
   when: gre_is_leader
 
-- name: Assign GRE IPs (non-leader)
+- name: Assign IPs (non-leader)
   set_fact:
     gre_a_local: "{{ gre_prefix_a | ipaddr('broadcast') }}"
     gre_a_peer: "{{ gre_prefix_a | ipaddr('network') }}"
@@ -64,17 +56,17 @@
     gre_tunnel_name_b: "{{ gre_peer_name }}-gre-b"
 
 # ---------------------------
-# Configure loopback
+# Loopback config
 # ---------------------------
 
-- name: Ensure loopback up
+- name: Configure loopback
   shell: |
     ip addr add {{ gre_loopback_ip }}/32 dev lo || true
     ip link set lo up
   changed_when: true
 
 # ---------------------------
-# Configure GRE
+# GRE tunnel config
 # ---------------------------
 
 - name: Configure GRE A

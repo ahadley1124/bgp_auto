@@ -1,92 +1,44 @@
 ---
 # ---------------------------
-# Pair identity
+# Get loopback IP
 # ---------------------------
 
-- name: Build pair identity
+- name: Get loopback interface
+  uri:
+    url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/dcim/interfaces/?device={{ inventory_hostname | urlencode }}&name=lo"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+  register: lo_iface
+
+- name: Get loopback IP
+  uri:
+    url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/ipam/ip-addresses/?interface_id={{ lo_iface.json.results[0].id }}"
+  register: lo_ip
+  when: lo_iface.json.results | length > 0
+
+- name: Set loopback fact
   set_fact:
-    gre_pair_key: "{{ [inventory_hostname, gre_peer_name] | sort | join('-') }}"
+    gre_loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
+  when: lo_ip.json.results | length > 0
 
 # ---------------------------
-# Deterministic offset
+# Use BGP peers
 # ---------------------------
 
-- name: Compute offset
+- name: Set GRE peers
   set_fact:
-    gre_prefix_offset: "{{ (gre_pair_key | hash('sha1') | int(base=16)) % 65000 }}"
+    gre_peers: "{{ effective_bgp_peers | default([]) }}"
+
+- name: Stop if no peers
+  meta: end_host
+  when: gre_peers | length == 0
 
 # ---------------------------
-# Compute /31s inside 10.255.0.0/16
+# Configure GRE per peer
 # ---------------------------
 
-- name: Compute GRE subnets
-  set_fact:
-    gre_octet2: "{{ (gre_prefix_offset // 256) % 256 }}"
-    gre_octet3: "{{ gre_prefix_offset % 256 }}"
-    gre_prefix_a: "10.255.{{ gre_octet2 }}.{{ gre_octet3 }}/31"
-    gre_prefix_b: "10.255.{{ gre_octet2 }}.{{ (gre_octet3 + 2) % 256 }}/31"
-
-# ---------------------------
-# Leader decision
-# ---------------------------
-
-- name: Determine leader
-  set_fact:
-    gre_is_leader: "{{ inventory_hostname < gre_peer_name }}"
-
-# ---------------------------
-# Assign IPs
-# ---------------------------
-
-- name: Assign GRE IPs (leader)
-  set_fact:
-    gre_a_local: "{{ gre_prefix_a | ipaddr('network') }}"
-    gre_a_peer: "{{ gre_prefix_a | ipaddr('broadcast') }}"
-    gre_b_local: "{{ gre_prefix_b | ipaddr('network') }}"
-    gre_b_peer: "{{ gre_prefix_b | ipaddr('broadcast') }}"
-  when: gre_is_leader
-
-- name: Assign GRE IPs (non-leader)
-  set_fact:
-    gre_a_local: "{{ gre_prefix_a | ipaddr('broadcast') }}"
-    gre_a_peer: "{{ gre_prefix_a | ipaddr('network') }}"
-    gre_b_local: "{{ gre_prefix_b | ipaddr('broadcast') }}"
-    gre_b_peer: "{{ gre_prefix_b | ipaddr('network') }}"
-  when: not gre_is_leader
-
-# ---------------------------
-# Tunnel names
-# ---------------------------
-
-- name: Set tunnel names
-  set_fact:
-    gre_tunnel_name_a: "{{ gre_peer_name }}-gre"
-    gre_tunnel_name_b: "{{ gre_peer_name }}-gre-b"
-
-# ---------------------------
-# Configure loopback
-# ---------------------------
-
-- name: Ensure loopback up
-  shell: |
-    ip addr add {{ gre_loopback_ip }}/32 dev lo || true
-    ip link set lo up
-  changed_when: true
-
-# ---------------------------
-# Configure GRE
-# ---------------------------
-
-- name: Configure GRE A
-  shell: |
-    ip tunnel add {{ gre_tunnel_name_a }} mode gre local {{ gre_loopback_ip }} remote {{ hostvars[gre_peer_name]['gre_loopback_ip'] }} ttl 255 || true
-    ip addr add {{ gre_a_local }}/31 dev {{ gre_tunnel_name_a }} || true
-    ip link set {{ gre_tunnel_name_a }} up
-  changed_when: true
-
-- name: Configure GRE B
-  shell: |
-    ip tunnel add {{ gre_tunnel_name_b }} mode gre local {{ gre_loopback_ip }} remote {{ hostvars[gre_peer_name]['gre_loopback_ip'] }} ttl 255 || true
-    ip addr add {{ gre_b_local }}/31 dev {{ gre_tunnel_name_b }} || true
-    ip link set {{ gre_tunnel_name_b }} up
-  changed_when: true
+- name: Configure GRE tunnels
+  include_tasks: gre_peer.yml
+  loop: "{{ gre_peers }}"
+  loop_control:
+    loop_var: gre_peer_name
