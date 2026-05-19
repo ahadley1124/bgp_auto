@@ -66,12 +66,18 @@
 - name: Reuse existing GRE prefix A if found
   ansible.builtin.set_fact:
     gre_prefix_a_id: "{{ existing_gre_prefix_a.json.results[0].id }}"
-  when: existing_gre_prefix_a is defined and (existing_gre_prefix_a.json.results | default([]) | length) > 0
+  when:
+    - existing_gre_prefix_a is defined
+    - (existing_gre_prefix_a.json.results | default([]) | length) > 0
+    - (gre_prefix_a_id | default('') | string | length) == 0
 
 - name: Reuse existing GRE prefix B if found
   ansible.builtin.set_fact:
     gre_prefix_b_id: "{{ existing_gre_prefix_b.json.results[0].id }}"
-  when: existing_gre_prefix_b is defined and (existing_gre_prefix_b.json.results | default([]) | length) > 0
+  when:
+    - existing_gre_prefix_b is defined
+    - (existing_gre_prefix_b.json.results | default([]) | length) > 0
+    - (gre_prefix_b_id | default('') | string | length) == 0
 
 - name: Create GRE prefix A
   ansible.builtin.uri:
@@ -86,7 +92,9 @@
       description: "{{ gre_pair_description }}"
     return_content: true
   register: created_prefix_a
-  when: gre_tunnel_prefix_a_value is defined and gre_prefix_a_id is not defined
+  when:
+    - gre_tunnel_prefix_a_value is defined
+    - (gre_prefix_a_id | default('') | string | length) == 0
 
 - name: Create GRE prefix B
   ansible.builtin.uri:
@@ -101,17 +109,23 @@
       description: "{{ gre_pair_description }}"
     return_content: true
   register: created_prefix_b
-  when: gre_tunnel_prefix_b_value is defined and gre_prefix_b_id is not defined
+  when:
+    - gre_tunnel_prefix_b_value is defined
+    - (gre_prefix_b_id | default('') | string | length) == 0
 
 - name: Record created GRE prefix A id
   ansible.builtin.set_fact:
-    gre_prefix_a_id: "{{ created_prefix_a.get('json', {}).get('id', created_prefix_a.get('id')) }}"
-  when: created_prefix_a is defined and gre_prefix_a_id is not defined
+    gre_prefix_a_id: "{{ created_prefix_a.json.id | default(created_prefix_a.id, true) }}"
+  when:
+    - created_prefix_a is defined
+    - (gre_prefix_a_id | default('') | string | length) == 0
 
 - name: Record created GRE prefix B id
   ansible.builtin.set_fact:
-    gre_prefix_b_id: "{{ created_prefix_b.get('json', {}).get('id', created_prefix_b.get('id')) }}"
-  when: created_prefix_b is defined and gre_prefix_b_id is not defined
+    gre_prefix_b_id: "{{ created_prefix_b.json.id | default(created_prefix_b.id, true) }}"
+  when:
+    - created_prefix_b is defined
+    - (gre_prefix_b_id | default('') | string | length) == 0
 
 - name: Debug GRE prefix resolution
   ansible.builtin.debug:
@@ -159,13 +173,14 @@
 
 - name: Allocate tunnel IP pair A from GRE prefix A
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_a_id }}available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_a_id }}/available-ips/"
     method: POST
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
     body_format: json
     body:
-      count: 2
+      - description: "GRE tunnel A local IP for {{ inventory_hostname }}"
+      - description: "GRE tunnel A peer IP for {{ inventory_hostname }}"
     return_content: true
   register: tunnel_a
   when:
@@ -174,13 +189,14 @@
 
 - name: Allocate tunnel IP pair B from GRE prefix B
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_b_id }}available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_b_id }}/available-ips/"
     method: POST
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
     body_format: json
     body:
-      count: 2
+      - description: "GRE tunnel B local IP for {{ inventory_hostname }}"
+      - description: "GRE tunnel B peer IP for {{ inventory_hostname }}"
     return_content: true
   register: tunnel_b
   when:
