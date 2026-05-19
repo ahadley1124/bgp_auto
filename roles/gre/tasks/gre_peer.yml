@@ -20,6 +20,18 @@
     gre_prefix_a: "10.255.{{ (gre_offset // 256) % 256 }}.{{ gre_offset % 256 }}/31"
     gre_prefix_b: "10.255.{{ (gre_offset // 256) % 256 }}.{{ (gre_offset % 256 + 2) % 256 }}/31"
 
+- name: Compute gre octets and prefix lengths
+  set_fact:
+    gre_a_net: "{{ gre_prefix_a.split('/')[0] }}"
+    gre_b_net: "{{ gre_prefix_b.split('/')[0] }}"
+    gre_prefix_len: "{{ gre_prefix_a.split('/')[1] }}"
+    gre_a_base: "{{ gre_a_net.split('.')[:-1] | join('.') }}"
+    gre_b_base: "{{ gre_b_net.split('.')[:-1] | join('.') }}"
+    gre_a_last: "{{ gre_a_net.split('.')[-1] | int }}"
+    gre_b_last: "{{ gre_b_net.split('.')[-1] | int }}"
+    gre_a_peer_last: "{{ ((gre_a_last + 1) % 256) }}"
+    gre_b_peer_last: "{{ ((gre_b_last + 1) % 256) }}"
+
 # ---------------------------
 # Decide IP ownership
 # ---------------------------
@@ -30,18 +42,18 @@
 
 - name: Assign IPs (leader)
   set_fact:
-    gre_a_local: "{{ (gre_prefix_a.split('/')[0].split('.')[:-1] | join('.')) ~ '.' ~ (gre_prefix_a.split('/')[0].split('.')[-1] | int | string) ~ '/' ~ (gre_prefix_a.split('/')[1]) }}"
-    gre_a_peer: "{{ (gre_prefix_a.split('/')[0].split('.')[:-1] | join('.')) ~ '.' ~ (((gre_prefix_a.split('/')[0].split('.')[-1] | int) + 1) % 256 | string) ~ '/' ~ (gre_prefix_a.split('/')[1]) }}"
-    gre_b_local: "{{ (gre_prefix_b.split('/')[0].split('.')[:-1] | join('.')) ~ '.' ~ (gre_prefix_b.split('/')[0].split('.')[-1] | int | string) ~ '/' ~ (gre_prefix_b.split('/')[1]) }}"
-    gre_b_peer: "{{ (gre_prefix_b.split('/')[0].split('.')[:-1] | join('.')) ~ '.' ~ (((gre_prefix_b.split('/')[0].split('.')[-1] | int) + 1) % 256 | string) ~ '/' ~ (gre_prefix_b.split('/')[1]) }}"
+    gre_a_local: "{{ gre_a_base ~ '.' ~ (gre_a_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_a_peer: "{{ gre_a_base ~ '.' ~ (gre_a_peer_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_b_local: "{{ gre_b_base ~ '.' ~ (gre_b_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_b_peer: "{{ gre_b_base ~ '.' ~ (gre_b_peer_last | string) ~ '/' ~ gre_prefix_len }}"
   when: gre_is_leader
 
 - name: Assign IPs (non-leader)
   set_fact:
-    gre_a_local: "{{ (gre_prefix_a.split('/')[0].split('.')[:-1] | join('.')) ~ '.' ~ (((gre_prefix_a.split('/')[0].split('.')[-1] | int) + 1) % 256 | string) ~ '/' ~ (gre_prefix_a.split('/')[1]) }}"
-    gre_a_peer: "{{ (gre_prefix_a.split('/')[0].split('.')[:-1] | join('.')) ~ '.' ~ (gre_prefix_a.split('/')[0].split('.')[-1] | int | string) ~ '/' ~ (gre_prefix_a.split('/')[1]) }}"
-    gre_b_local: "{{ (gre_prefix_b.split('/')[0].split('.')[:-1] | join('.')) ~ '.' ~ (((gre_prefix_b.split('/')[0].split('.')[-1] | int) + 1) % 256 | string) ~ '/' ~ (gre_prefix_b.split('/')[1]) }}"
-    gre_b_peer: "{{ (gre_prefix_b.split('/')[0].split('.')[:-1] | join('.')) ~ '.' ~ (gre_prefix_b.split('/')[0].split('.')[-1] | int | string) ~ '/' ~ (gre_prefix_b.split('/')[1]) }}"
+    gre_a_local: "{{ gre_a_base ~ '.' ~ (gre_a_peer_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_a_peer: "{{ gre_a_base ~ '.' ~ (gre_a_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_b_local: "{{ gre_b_base ~ '.' ~ (gre_b_peer_last | string) ~ '/' ~ gre_prefix_len }}"
+    gre_b_peer: "{{ gre_b_base ~ '.' ~ (gre_b_last | string) ~ '/' ~ gre_prefix_len }}"
   when: not gre_is_leader
 
 # ---------------------------
