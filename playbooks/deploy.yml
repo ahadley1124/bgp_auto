@@ -2,5 +2,7 @@
   become: true
   gather_facts: false
   roles:
-    - bird
-    - gre
+    - role: bird
+      tags: bird
+    - role: gre
+      tags: gre

@@ -96,6 +96,9 @@
     - gre_tunnel_prefix_a_value is defined
     - (gre_prefix_a_id | default('') | string | length) == 0
 
+- debug:
+    msg: "{{ created_prefix_a | to_nice_json }}"
+
 - name: Create GRE prefix B
   ansible.builtin.uri:
     url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/"
@@ -128,9 +131,14 @@
 - name: Validate GRE prefix A creation
   ansible.builtin.assert:
     that:
-      - created_prefix_a.json is defined
-      - created_prefix_a.json.id is defined
-    fail_msg: "GRE prefix A creation failed: {{ created_prefix_a.json }}"
+      - (created_prefix_a | default({})).get('json') is mapping
+      - (created_prefix_a.json | default({})).get('id') | default('') | length > 0
+    fail_msg: >-
+      GRE prefix A creation failed:
+      {{
+        (created_prefix_a | default({}))
+        | to_nice_json
+      }}
   when: created_prefix_a is defined
 
 - name: Record created GRE prefix B id
