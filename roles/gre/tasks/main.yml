@@ -26,7 +26,6 @@
     gre_loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
   when: lo_ip.json.results | length > 0
 
-# Allocate tunnel IP addresses from NetBox /31 prefixes tagged with role gre-tunnels
 - name: Get GRE tunnel prefixes
   ansible.builtin.uri:
     url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/?role={{ gre_tunnel_prefix_role | urlencode }}&limit=0"
@@ -34,96 +33,47 @@
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
   register: gre_tunnel_prefix_lookup
 
-- name: Build GRE tunnel prefix candidates (only /31)
+- name: Select GRE parent prefix
   ansible.builtin.set_fact:
-    gre_tunnel_prefix_candidates: >-
-      {{ (gre_tunnel_prefix_lookup.json.results | default([])
-          | selectattr('prefix', 'match', '^.*/31$')
-          | sort(attribute='prefix')) | list }}
-
-- name: Select a parent prefix when no /31 prefixes exist
-  ansible.builtin.set_fact:
-    gre_parent_prefix: "{{ (gre_tunnel_prefix_lookup.json.results | default([]) | sort(attribute='prefix') | list)[0] }}"
-  when: gre_tunnel_prefix_candidates | length == 0 and (gre_tunnel_prefix_lookup.json.results | length) > 0
-
-- name: Calculate GRE tunnel prefix index
-  ansible.builtin.set_fact:
-    gre_tunnel_prefix_index: "{{ ansible_play_hosts_all.index(inventory_hostname) * 2 }}"
-
-- name: Validate GRE tunnel prefix availability
-  ansible.builtin.assert:
-    that:
-      - gre_tunnel_prefix_candidates | length >= (gre_tunnel_prefix_index | int) + 2 or (gre_parent_prefix is defined)
-    fail_msg: >-
-      NetBox does not have enough /31 prefixes with role '{{ gre_tunnel_prefix_role }}' to allocate GRE tunnels for {{ inventory_hostname }}, and no parent prefix was found to allocate from.
-
-- name: Set GRE tunnel prefixes for this host
-  ansible.builtin.set_fact:
-    gre_tunnel_prefix_a: "{{ gre_tunnel_prefix_candidates[gre_tunnel_prefix_index | int] }}"
-    gre_tunnel_prefix_b: "{{ gre_tunnel_prefix_candidates[(gre_tunnel_prefix_index | int) + 1] }}"
-  when: gre_tunnel_prefix_candidates | length >= (gre_tunnel_prefix_index | int) + 2
-
-- name: Allocate tunnel IP pair A
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_tunnel_prefix_a.id }}/available-ips/"
-    method: POST
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-    body_format: json
-    body:
-      count: 2
-    return_content: true
-  register: tunnel_a
-  when: gre_tunnel_prefix_a is defined
-
-- name: Allocate tunnel IP pair B
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_tunnel_prefix_b.id }}/available-ips/"
-    method: POST
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-    body_format: json
-    body:
-      count: 2
-    return_content: true
-  register: tunnel_b
-  when: gre_tunnel_prefix_b is defined
-
-- name: Compute deterministic description from sorted host pair
+    gre_parent_prefix: "{{ (gre_tunnel_prefix_lookup.json.results | default([]) | rejectattr('prefix', 'match', '^.*/31$') | sort(attribute='prefix') | list)[0] }}"
+  when: (gre_tunnel_prefix_lookup.json.results | default([]) | rejectattr('prefix', 'match', '^.*/31$') | list | length) > 0
+- name: Compute deterministic description and GRE /31 prefix values
   ansible.builtin.set_fact:
     gre_pair_description: "{{ [inventory_hostname, gre_peer_name] | sort | join('-') }}"
+    gre_prefix_offset: "{{ ansible_play_hosts_all.index(inventory_hostname) * 4 }}"
+    gre_tunnel_prefix_a_value: >-
+      {{ lookup('pipe', 'python3 -c "import ipaddress; p=ipaddress.ip_network(\'%s\'); o=%d; print(ipaddress.ip_network((int(p.network_address)+o, 31), strict=False))"' % (gre_parent_prefix.prefix, (ansible_play_hosts_all.index(inventory_hostname) * 4))) }}
+    gre_tunnel_prefix_b_value: >-
+      {{ lookup('pipe', 'python3 -c "import ipaddress; p=ipaddress.ip_network(\'%s\'); o=%d; print(ipaddress.ip_network((int(p.network_address)+o, 31), strict=False))"' % (gre_parent_prefix.prefix, (ansible_play_hosts_all.index(inventory_hostname) * 4) + 2)) }}
   when: gre_parent_prefix is defined and gre_peer_name is defined
 
-- name: Query for existing GRE prefixes with this host pair description
+- name: Query existing GRE prefix A
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/?parent_id={{ gre_parent_prefix.id }}&description={{ gre_pair_description | urlencode }}&limit=0"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/?prefix={{ gre_tunnel_prefix_a_value | urlencode }}&limit=0"
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-  register: existing_gre_prefixes
-  when: gre_parent_prefix is defined and gre_pair_description is defined
+  register: existing_gre_prefix_a
+  when: gre_tunnel_prefix_a_value is defined
 
-- name: Reuse existing prefixes if 2 or more found
+- name: Query existing GRE prefix B
+  ansible.builtin.uri:
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/?prefix={{ gre_tunnel_prefix_b_value | urlencode }}&limit=0"
+    headers:
+      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
+  register: existing_gre_prefix_b
+  when: gre_tunnel_prefix_b_value is defined
+
+- name: Reuse existing GRE prefix A if found
   ansible.builtin.set_fact:
-    created_prefix_a: "{{ {'json': {'id': existing_gre_prefixes.json.results[0].id}} }}"
-    created_prefix_b: "{{ {'json': {'id': existing_gre_prefixes.json.results[1].id}} }}"
-  when: gre_parent_prefix is defined and existing_gre_prefixes is defined and (existing_gre_prefixes.json.results | default([]) | length) >= 2
+    gre_prefix_a_id: "{{ existing_gre_prefix_a.json.results[0].id }}"
+  when: existing_gre_prefix_a is defined and (existing_gre_prefix_a.json.results | default([]) | length) > 0
 
-- name: Allocate 4 IPs from parent prefix when /31 prefixes are not present
-  ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_parent_prefix.id }}/available-prefixes/?prefix_length=31&limit=0"
-    headers:
-      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-  register: gre_available_subs
-  when: gre_parent_prefix is defined and (existing_gre_prefixes is not defined or (existing_gre_prefixes.json.results | default([]) | length) < 2)
+- name: Reuse existing GRE prefix B if found
+  ansible.builtin.set_fact:
+    gre_prefix_b_id: "{{ existing_gre_prefix_b.json.results[0].id }}"
+  when: existing_gre_prefix_b is defined and (existing_gre_prefix_b.json.results | default([]) | length) > 0
 
-- name: Ensure we have two available /31 sub-prefixes
-  ansible.builtin.assert:
-    that:
-      - (gre_available_subs.json | default([]) | length) >= 2
-    fail_msg: "Not enough available /31 sub-prefixes under parent {{ gre_parent_prefix.prefix }} to create GRE prefixes."
-  when: gre_parent_prefix is defined and gre_available_subs is defined
-
-- name: Create child /31 prefix A
+- name: Create GRE prefix A
   ansible.builtin.uri:
     url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/"
     method: POST
@@ -131,14 +81,14 @@
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
     body_format: json
     body:
-      prefix: "{{ gre_available_subs.json[0].prefix }}"
+      prefix: "{{ gre_tunnel_prefix_a_value }}"
       parent: "{{ gre_parent_prefix.id }}"
       description: "{{ gre_pair_description }}"
     return_content: true
   register: created_prefix_a
-  when: gre_parent_prefix is defined and gre_available_subs is defined and (existing_gre_prefixes is not defined or (existing_gre_prefixes.json.results | default([]) | length) < 2)
+  when: gre_tunnel_prefix_a_value is defined and gre_prefix_a_id is not defined
 
-- name: Create child /31 prefix B
+- name: Create GRE prefix B
   ansible.builtin.uri:
     url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/"
     method: POST
@@ -146,16 +96,57 @@
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
     body_format: json
     body:
-      prefix: "{{ gre_available_subs.json[1].prefix }}"
+      prefix: "{{ gre_tunnel_prefix_b_value }}"
       parent: "{{ gre_parent_prefix.id }}"
       description: "{{ gre_pair_description }}"
     return_content: true
   register: created_prefix_b
-  when: gre_parent_prefix is defined and gre_available_subs is defined and (existing_gre_prefixes is not defined or (existing_gre_prefixes.json.results | default([]) | length) < 2)
+  when: gre_tunnel_prefix_b_value is defined and gre_prefix_b_id is not defined
 
-- name: Allocate tunnel IP pair A from created prefix
+- name: Record created GRE prefix A id
+  ansible.builtin.set_fact:
+    gre_prefix_a_id: "{{ created_prefix_a.json.id }}"
+  when: created_prefix_a is defined and gre_prefix_a_id is not defined
+
+- name: Record created GRE prefix B id
+  ansible.builtin.set_fact:
+    gre_prefix_b_id: "{{ created_prefix_b.json.id }}"
+  when: created_prefix_b is defined and gre_prefix_b_id is not defined
+
+- name: Ensure GRE prefix ids are available
+  ansible.builtin.assert:
+    that:
+      - gre_prefix_a_id is defined
+      - gre_prefix_b_id is defined
+    fail_msg: "Unable to determine GRE prefix ids for {{ inventory_hostname }} and {{ gre_peer_name }}."
+
+- name: Set GRE prefix A description
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ created_prefix_a.json.id }}/available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_a_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
+    body_format: json
+    body:
+      description: "{{ gre_pair_description }}"
+    return_content: true
+  when: gre_pair_description is defined
+
+- name: Set GRE prefix B description
+  ansible.builtin.uri:
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_b_id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
+    body_format: json
+    body:
+      description: "{{ gre_pair_description }}"
+    return_content: true
+  when: gre_pair_description is defined
+
+- name: Allocate tunnel IP pair A from GRE prefix A
+  ansible.builtin.uri:
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_a_id }}/available-ips/"
     method: POST
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
@@ -164,11 +155,10 @@
       count: 2
     return_content: true
   register: tunnel_a
-  when: created_prefix_a is defined
 
-- name: Allocate tunnel IP pair B from created prefix
+- name: Allocate tunnel IP pair B from GRE prefix B
   ansible.builtin.uri:
-    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ created_prefix_b.json.id }}/available-ips/"
+    url: "{{ lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true) }}/api/ipam/prefixes/{{ gre_prefix_b_id }}/available-ips/"
     method: POST
     headers:
       Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
@@ -177,14 +167,11 @@
       count: 2
     return_content: true
   register: tunnel_b
-  when: created_prefix_b is defined
 
 - name: Parse tunnel IP responses
   ansible.builtin.set_fact:
-    tunnel_a_ips: >-
-      {{ (tunnel_a.json | default(tunnel_a.content | default('[]') | from_json)) if (tunnel_a is defined) else [] }}
-    tunnel_b_ips: >-
-      {{ (tunnel_b.json | default(tunnel_b.content | default('[]') | from_json)) if (tunnel_b is defined) else [] }}
+    tunnel_a_ips: "{{ tunnel_a.json | default(tunnel_a.content | default('[]') | from_json) }}"
+    tunnel_b_ips: "{{ tunnel_b.json | default(tunnel_b.content | default('[]') | from_json) }}"
 
 - name: Set tunnel IP facts
   ansible.builtin.assert:
