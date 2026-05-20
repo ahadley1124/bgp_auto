@@ -4,6 +4,7 @@
 # =====================================
 
 {% for peer in effective_bgp_peers %}
+{% if hostvars[peer].loopback_ip is defined and loopback_ip is defined %}
 protocol bgp ibgp_{{ peer | replace('-', '_') }} {
     local as {{ bgp_as | default(17290) }};
     neighbor {{ hostvars[peer].loopback_ip }} as {{ bgp_as | default(17290) }};
@@ -30,4 +31,5 @@ protocol bgp ibgp_{{ peer | replace('-', '_') }} {
     rr client;
     {% endif %}
 }
+{% endif %}
 {% endfor %}
