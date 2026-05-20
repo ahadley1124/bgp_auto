@@ -93,6 +93,10 @@
     gre_tunnel_cleanup:
       - "{{ gre_peer_name }}-gre"
 
+- name: Set local IP fact
+  set_fact:
+    local_ip: "{{ ansible_host }}"
+
 # Diagnostic: capture existing GRE tunnel and link state (non-destructive)
 - name: Capture existing GRE tunnels and links
   shell: |
