@@ -6,7 +6,10 @@ protocol ospf v2 ospf_underlay {
     ipv4 {
         table master4;
         import all;
-        export all;
+        export filter {
+            if source = RTS_DEVICE && (ifname ~ "gre" || ifname = "local") then accept;
+            reject;
+        };
     };
 
     area 0 {
