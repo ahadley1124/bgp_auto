@@ -189,3 +189,7 @@
     - name: Bring GRE up
       shell: ip link set {{ gre_tunnel_name }} up
       changed_when: true
+
+    - name: Set Tunnel MTU
+      shell: ip link set {{ gre_tunnel_name }} mtu 1400
+      changed_when: true
