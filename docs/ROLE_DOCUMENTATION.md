@@ -143,7 +143,7 @@ protocol ospf v2 ospf_underlay {
         export all;
     };
     area 0 {
-    interface "wg*" {
+    interface "*gre*" {
       type pointopoint;
       hello 1;
       dead 4;
