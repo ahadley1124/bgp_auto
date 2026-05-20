@@ -7,7 +7,7 @@ protocol ospf v2 ospf_underlay {
         table master4;
         import all;
         export filter {
-            if source = RTS_DEVICE && (ifname ~ "gre" || ifname = "local") then accept;
+            if source = RTS_DEVICE && (ifname ~ "gre" || ifname = "local" || ifname = "lo") then accept;
             reject;
         };
     };
