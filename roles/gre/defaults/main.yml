@@ -4,4 +4,4 @@
 gre_tunnel_prefix_role: gre-tunnels
 
 # Local file containing /31 prefixes to skip during GRE allocation.
-gre_blocked_prefixes_file: "{{ playbook_dir }}/inventory/gre_blocked_prefixes_10.255.0.0_23.txt"
+gre_blocked_prefixes_file: "{{ inventory_dir }}/gre_blocked_prefixes_10.255.0.0_23.txt"
