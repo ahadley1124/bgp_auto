@@ -54,7 +54,36 @@
     return_content: yes
   register: gre_existing_prefix_query
 
-- name: Create next available /31 for GRE pair (leader only)
+- name: Set existing non-blocked GRE prefix (if present)
+  set_fact:
+    gre_existing_valid_prefix: >-
+      {{
+        (
+          gre_existing_prefix_query.json.results
+          | rejectattr('prefix', 'match', '^10\\.255\\.(0|1)\\..*/31$')
+          | map(attribute='prefix')
+          | list
+          | first
+        ) | default('')
+      }}
+
+- name: Retire blocked GRE prefix for this pair description (leader only)
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/prefixes/{{ gre_existing_prefix_query.json.results[0].id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      description: "{{ gre_pair_description }} [retired-blocked-10.255.0.0_23]"
+    status_code: [200]
+  when:
+    - inventory_hostname < gre_peer_name
+    - gre_existing_prefix_query.json.count | int > 0
+    - gre_existing_valid_prefix | length == 0
+
+- name: Request next available /31 candidate (leader only)
   uri:
     url: "{{ netbox_api_url }}/api/ipam/prefixes/{{ gre_supernet_id }}/available-prefixes/"
     method: POST
@@ -64,13 +93,30 @@
     body_format: json
     body:
       prefix_length: 31
-      description: "{{ gre_pair_description }}"
     status_code: [200, 201]
     return_content: yes
-  register: gre_created_prefix
+  register: gre_created_prefix_candidate
+  retries: 64
+  delay: 0
+  until: gre_created_prefix_candidate.json.prefix is not match('^10\\.255\\.(0|1)\\..*/31$')
   when:
     - inventory_hostname < gre_peer_name
-    - gre_existing_prefix_query.json.count | int == 0
+    - gre_existing_valid_prefix | length == 0
+
+- name: Set description on allocated non-blocked /31 (leader only)
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/prefixes/{{ gre_created_prefix_candidate.json.id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      description: "{{ gre_pair_description }}"
+    status_code: [200]
+  when:
+    - inventory_hostname < gre_peer_name
+    - gre_existing_valid_prefix | length == 0
 
 - name: Re-query GRE /31 for this pair
   uri:
@@ -85,7 +131,23 @@
 
 - name: Set allocated GRE prefix
   set_fact:
-    gre_prefix: "{{ gre_prefix_query_final.json.results[0].prefix }}"
+    gre_prefix: >-
+      {{
+        (
+          gre_prefix_query_final.json.results
+          | rejectattr('prefix', 'match', '^10\\.255\\.(0|1)\\..*/31$')
+          | map(attribute='prefix')
+          | list
+          | first
+        )
+      }}
+
+- name: Validate non-blocked GRE prefix selected
+  assert:
+    that:
+      - gre_prefix is defined
+      - gre_prefix | length > 0
+    fail_msg: "Could not find non-blocked GRE /31 for {{ gre_pair_description }}."
 
 - name: Compute gre base nets and prefix
   set_fact:
