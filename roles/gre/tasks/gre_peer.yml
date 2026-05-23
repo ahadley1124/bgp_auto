@@ -386,7 +386,7 @@
       until: gre_verify.rc == 0
       failed_when: gre_verify.rc != 0
 
-- name: Assign IP to GRE
+    - name: Assign IP to GRE
       shell: ip addr add {{ gre_local }} dev {{ gre_tunnel_name }} || true
       changed_when: true
 
