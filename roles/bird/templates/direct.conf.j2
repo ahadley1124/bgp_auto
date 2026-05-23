@@ -1,5 +1,11 @@
 # AUTO-GENERATED CONNECTED ROUTES
 
 protocol direct local_connected {
-    interface "lo", "local";
+    interface "lo", "local", "dummy*", "BR-*";
+    ipv4 {
+        import filter {
+            if ifname ~ "BR-.*" then bgp_community.add((17290, 666));
+            accept;
+        };
+    };
 }

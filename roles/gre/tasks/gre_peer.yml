@@ -6,31 +6,86 @@
 - name: Create pair key
   set_fact:
     gre_pair_key: "{{ [inventory_hostname, gre_peer_name] | sort | join('-') }}"
+    gre_pair_description: "GRE {{ [inventory_hostname, gre_peer_name] | sort | join(' <-> ') }}"
+    gre_dummy_if_name: "dummy{{ ansible_loop.index }}"
 
 - name: Debug pair key
   debug:
     msg: "GRE pair key for {{ inventory_hostname }} and {{ gre_peer_name }} is {{ gre_pair_key }}"
 
 # ---------------------------
-# Deterministic subnet math
+# NetBox-backed /31 allocation
 # ---------------------------
 
-- name: Generate deterministic offset
+- name: Validate NetBox credentials for GRE prefix allocation
+  assert:
+    that:
+      - (lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true)) | length > 0
+      - lookup('env', 'NETBOX_TOKEN') | length > 0
+    fail_msg: NETBOX_API (or NETBOX_URL) and NETBOX_TOKEN must be set.
+
+- name: Set NetBox API endpoint
   set_fact:
-    gre_offset: "{{ (gre_pair_key | hash('sha1') | int(base=16)) % 60000 }}"
+    netbox_api_url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}"
 
-- name: Debug deterministic offset
-  debug:
-    msg: "GRE offset for {{ gre_pair_key }} is {{ gre_offset }}"
+- name: Lookup GRE supernet prefix object
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/prefixes/?prefix=10.255.0.0%2F16"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: gre_supernet_query
 
-- name: Build /31 networks
+- name: Validate GRE supernet exists
+  assert:
+    that:
+      - gre_supernet_query.json.results | length > 0
+    fail_msg: "NetBox prefix 10.255.0.0/16 must exist for GRE allocation."
+
+- name: Set GRE supernet ID
   set_fact:
-    gre_prefix: "10.255.{{ (gre_offset // 256) % 256 }}.{{ gre_offset % 256 }}/31"
+    gre_supernet_id: "{{ gre_supernet_query.json.results[0].id }}"
 
-- name: Debug /31 networks
-  debug:
-    msg:
-      - "GRE prefix: {{ gre_prefix }}"
+- name: Lookup existing GRE /31 by description
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/prefixes/?parent=10.255.0.0%2F16&prefix_length=31&description={{ gre_pair_description | urlencode }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: gre_existing_prefix_query
+
+- name: Create next available /31 for GRE pair (leader only)
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/prefixes/{{ gre_supernet_id }}/available-prefixes/"
+    method: POST
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      prefix_length: 31
+      description: "{{ gre_pair_description }}"
+    status_code: [200, 201]
+    return_content: yes
+  register: gre_created_prefix
+  when:
+    - inventory_hostname < gre_peer_name
+    - gre_existing_prefix_query.json.count | int == 0
+
+- name: Re-query GRE /31 for this pair
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/prefixes/?parent=10.255.0.0%2F16&prefix_length=31&description={{ gre_pair_description | urlencode }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: gre_prefix_query_final
+  retries: 5
+  delay: 1
+  until: gre_prefix_query_final.json.count | int > 0
+
+- name: Set allocated GRE prefix
+  set_fact:
+    gre_prefix: "{{ gre_prefix_query_final.json.results[0].prefix }}"
 
 - name: Compute gre base nets and prefix
   set_fact:
@@ -79,6 +134,155 @@
   debug:
     msg:
       - "GRE local: {{ gre_local }} peer: {{ gre_peer }}"
+
+# ---------------------------
+# Ensure NetBox interfaces + IPs on dummyN
+# ---------------------------
+
+- name: Query local device ID from NetBox
+  uri:
+    url: "{{ netbox_api_url }}/api/dcim/devices/?name={{ inventory_hostname | urlencode }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: gre_local_device_query
+
+- name: Query peer device ID from NetBox
+  uri:
+    url: "{{ netbox_api_url }}/api/dcim/devices/?name={{ gre_peer_name | urlencode }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: gre_peer_device_query
+  when: inventory_hostname < gre_peer_name
+
+- name: Validate local device lookup
+  assert:
+    that:
+      - gre_local_device_query.json.results | length > 0
+    fail_msg: "Device '{{ inventory_hostname }}' not found in NetBox."
+
+- name: Set local/peer device IDs
+  set_fact:
+    gre_local_device_id: "{{ gre_local_device_query.json.results[0].id }}"
+    gre_peer_device_id: "{{ (gre_peer_device_query.json.results[0].id) if (inventory_hostname < gre_peer_name) else omit }}"
+
+- name: Query local dummy interface
+  uri:
+    url: "{{ netbox_api_url }}/api/dcim/interfaces/?device_id={{ gre_local_device_id }}&name={{ gre_dummy_if_name }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: gre_local_dummy_iface_query
+
+- name: Create local dummy interface in NetBox
+  uri:
+    url: "{{ netbox_api_url }}/api/dcim/interfaces/"
+    method: POST
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      device: "{{ gre_local_device_id }}"
+      name: "{{ gre_dummy_if_name }}"
+      type: virtual
+      description: "{{ gre_pair_description }}"
+    status_code: [200, 201]
+  when: gre_local_dummy_iface_query.json.count | int == 0
+
+- name: Re-query local dummy interface
+  uri:
+    url: "{{ netbox_api_url }}/api/dcim/interfaces/?device_id={{ gre_local_device_id }}&name={{ gre_dummy_if_name }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: gre_local_dummy_iface_final
+
+- name: Query local GRE IP in NetBox
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/ip-addresses/?address={{ gre_local | urlencode }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: gre_local_ip_query
+
+- name: Create local GRE IP in NetBox
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/ip-addresses/"
+    method: POST
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      address: "{{ gre_local }}"
+      assigned_object_type: dcim.interface
+      assigned_object_id: "{{ gre_local_dummy_iface_final.json.results[0].id }}"
+      description: "{{ gre_pair_description }}"
+      status: active
+    status_code: [200, 201]
+  when: gre_local_ip_query.json.count | int == 0
+
+- name: Ensure peer dummy interface and GRE IP exist in NetBox (leader only)
+  block:
+    - name: Query peer dummy interface
+      uri:
+        url: "{{ netbox_api_url }}/api/dcim/interfaces/?device_id={{ gre_peer_device_id }}&name={{ gre_dummy_if_name }}"
+        headers:
+          Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+        return_content: yes
+      register: gre_peer_dummy_iface_query
+
+    - name: Create peer dummy interface in NetBox
+      uri:
+        url: "{{ netbox_api_url }}/api/dcim/interfaces/"
+        method: POST
+        headers:
+          Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          device: "{{ gre_peer_device_id }}"
+          name: "{{ gre_dummy_if_name }}"
+          type: virtual
+          description: "{{ gre_pair_description }}"
+        status_code: [200, 201]
+      when: gre_peer_dummy_iface_query.json.count | int == 0
+
+    - name: Re-query peer dummy interface
+      uri:
+        url: "{{ netbox_api_url }}/api/dcim/interfaces/?device_id={{ gre_peer_device_id }}&name={{ gre_dummy_if_name }}"
+        headers:
+          Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+        return_content: yes
+      register: gre_peer_dummy_iface_final
+
+    - name: Query peer GRE IP in NetBox
+      uri:
+        url: "{{ netbox_api_url }}/api/ipam/ip-addresses/?address={{ gre_peer | urlencode }}"
+        headers:
+          Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+        return_content: yes
+      register: gre_peer_ip_query
+
+    - name: Create peer GRE IP in NetBox
+      uri:
+        url: "{{ netbox_api_url }}/api/ipam/ip-addresses/"
+        method: POST
+        headers:
+          Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          address: "{{ gre_peer }}"
+          assigned_object_type: dcim.interface
+          assigned_object_id: "{{ gre_peer_dummy_iface_final.json.results[0].id }}"
+          description: "{{ gre_pair_description }}"
+          status: active
+        status_code: [200, 201]
+      when: gre_peer_ip_query.json.count | int == 0
+  when: inventory_hostname < gre_peer_name
 
 # ---------------------------
 # Tunnel names
@@ -182,7 +386,7 @@
       until: gre_verify.rc == 0
       failed_when: gre_verify.rc != 0
 
-    - name: Assign IP to GRE
+- name: Assign IP to GRE
       shell: ip addr add {{ gre_local }} dev {{ gre_tunnel_name }} || true
       changed_when: true
 

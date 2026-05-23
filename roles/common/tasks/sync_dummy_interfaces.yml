@@ -1,0 +1,46 @@
+---
+- name: Set NetBox API endpoint for dummy sync
+  set_fact:
+    netbox_api_url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}"
+
+- name: Query device interfaces from NetBox
+  uri:
+    url: "{{ netbox_api_url }}/api/dcim/interfaces/?device={{ inventory_hostname | urlencode }}&limit=0"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  register: netbox_interfaces_query
+
+- name: Filter dummyN interfaces
+  set_fact:
+    netbox_dummy_ifaces: "{{ netbox_interfaces_query.json.results | selectattr('name', 'match', '^dummy[0-9]+$') | list }}"
+
+- name: Query IPs for dummyN interfaces
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/ip-addresses/?interface_id={{ item.id }}&limit=0"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  loop: "{{ netbox_dummy_ifaces }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: netbox_dummy_ips_query
+
+- name: Build dummy interface to IP map
+  set_fact:
+    netbox_dummy_ip_map: "{{ netbox_dummy_ip_map | default({}) | combine({ item.item.name: (item.json.results | map(attribute='address') | list) }) }}"
+  loop: "{{ netbox_dummy_ips_query.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Ensure Linux dummyN interfaces exist
+  shell: |
+    ip link show dev {{ item.key }} >/dev/null 2>&1 || ip link add {{ item.key }} type dummy
+    ip link set {{ item.key }} up
+  loop: "{{ (netbox_dummy_ip_map | default({})) | dict2items }}"
+  changed_when: true
+
+- name: Ensure dummyN interface IPs exist on Linux
+  shell: ip addr add {{ item.1 }} dev {{ item.0.key }} || true
+  loop: "{{ ((netbox_dummy_ip_map | default({})) | dict2items) | subelements('value') }}"
+  changed_when: true

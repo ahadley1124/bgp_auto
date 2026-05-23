@@ -79,3 +79,7 @@
   loop: "{{ gre_peers }}"
   loop_control:
     loop_var: gre_peer_name
+    extended: true
+
+- name: Sync dummyN interfaces and IPs from NetBox to Linux
+  include_tasks: ../../common/tasks/sync_dummy_interfaces.yml
