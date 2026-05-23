@@ -28,6 +28,17 @@
   set_fact:
     netbox_api_url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}"
 
+- name: Load blocked /31 prefixes from file
+  set_fact:
+    gre_blocked_prefixes: >-
+      {{
+        lookup('file', gre_blocked_prefixes_file)
+        .splitlines()
+        | map('trim')
+        | reject('equalto', '')
+        | list
+      }}
+
 - name: Lookup GRE supernet prefix object
   uri:
     url: "{{ netbox_api_url }}/api/ipam/prefixes/?prefix=10.255.0.0%2F16"
@@ -60,7 +71,7 @@
       {{
         (
           gre_existing_prefix_query.json.results
-          | rejectattr('prefix', 'match', '^10\\.255\\.(0|1)\\..*/31$')
+          | rejectattr('prefix', 'in', gre_blocked_prefixes)
           | map(attribute='prefix')
           | list
           | first
@@ -98,7 +109,7 @@
   register: gre_created_prefix_candidate
   retries: 64
   delay: 0
-  until: gre_created_prefix_candidate.json.prefix is not match('^10\\.255\\.(0|1)\\..*/31$')
+  until: gre_created_prefix_candidate.json.prefix not in gre_blocked_prefixes
   when:
     - inventory_hostname < gre_peer_name
     - gre_existing_valid_prefix | length == 0
@@ -135,7 +146,7 @@
       {{
         (
           gre_prefix_query_final.json.results
-          | rejectattr('prefix', 'match', '^10\\.255\\.(0|1)\\..*/31$')
+          | rejectattr('prefix', 'in', gre_blocked_prefixes)
           | map(attribute='prefix')
           | list
           | first
