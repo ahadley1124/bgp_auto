@@ -59,6 +59,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Elevate to root
+        run: |
+          echo "$ANSIBLE_BECOME_PASS" | sudo -S -v
+
       - name: Write vault password file
         run: |
           vault_file="$RUNNER_TEMP/ansible-vault-password"
