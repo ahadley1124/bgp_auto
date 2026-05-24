@@ -61,7 +61,7 @@ jobs:
 
       - name: Elevate to root
         run: |
-          echo "$GITHUB_USER_PASS" | sudo -S -v
+          echo "$GIT_USER_PASS" | sudo -S -v
 
       - name: Write vault password file
         run: |
