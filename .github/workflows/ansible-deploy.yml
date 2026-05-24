@@ -44,7 +44,7 @@ jobs:
       - name: Add SSH key
         run: |
           key_file="$RUNNER_TEMP/id_ed25519"
-          printf '%s' '${{ secrets.SSH_PRIVATE_KEY }}' > "$key_file"
+          printf '%s' '${{ secrets.SSH_PRIVATE_KEY }}' | tr -d '\r' > "$key_file"
           chmod 600 "$key_file"
           ssh-add "$key_file"
 
@@ -92,7 +92,7 @@ jobs:
       - name: Add SSH key
         run: |
           key_file="$RUNNER_TEMP/id_ed25519"
-          printf '%s' '${{ secrets.SSH_PRIVATE_KEY }}' > "$key_file"
+          printf '%s' '${{ secrets.SSH_PRIVATE_KEY }}' | tr -d '\r' > "$key_file"
           chmod 600 "$key_file"
           ssh-add "$key_file"
 
