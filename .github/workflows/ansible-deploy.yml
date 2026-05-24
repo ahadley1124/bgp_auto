@@ -19,7 +19,7 @@ jobs:
       ANSIBLE_HOST_KEY_CHECKING: "False"
       NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}
       NETBOX_TOKEN: ${{ secrets.NETBOX_TOKEN }}
-      ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_BECOME_PASSWORD }}
+      GITHUB_USER_PASS: ${{ secrets.GITHUB_USER_PASS }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,14 +54,14 @@ jobs:
       ANSIBLE_HOST_KEY_CHECKING: "False"
       NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}
       NETBOX_TOKEN: ${{ secrets.NETBOX_TOKEN }}
-      ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_BECOME_PASSWORD }}
+      GITHUB_USER_PASS: ${{ secrets.GITHUB_USER_PASS }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Elevate to root
         run: |
-          echo "$ANSIBLE_BECOME_PASS" | sudo -S -v
+          echo "$GITHUB_USER_PASS" | sudo -S -v
 
       - name: Write vault password file
         run: |
