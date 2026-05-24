@@ -72,4 +72,4 @@ jobs:
       - name: Deploy
         run: |
           vault_file="$RUNNER_TEMP/ansible-vault-password"
-          ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --vault-password-file "$vault_file"
+          echo "$GIT_USER_PASS" | sudo -S -E ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --vault-password-file "$vault_file"
