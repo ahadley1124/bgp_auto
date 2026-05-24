@@ -1,0 +1,89 @@
+name: Ansible Deploy
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ansible-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    env:
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}
+      NETBOX_TOKEN: ${{ secrets.NETBOX_TOKEN }}
+      ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_BECOME_PASSWORD }}
+      ANSIBLE_VAULT_PASSWORD_FILE: ${{ runner.temp }}/ansible-vault-password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ansible dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ansible-core==2.17.*" pynetbox netaddr
+          ansible-galaxy collection install netbox.netbox ansible.utils
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Write vault password file
+        run: |
+          printf '%s' '${{ secrets.ANSIBLE_VAULT_PASSWORD }}' > "$ANSIBLE_VAULT_PASSWORD_FILE"
+          chmod 600 "$ANSIBLE_VAULT_PASSWORD_FILE"
+
+      - name: Dry run deployment
+        run: ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --check --diff --vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE"
+
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: dry-run
+    env:
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}
+      NETBOX_TOKEN: ${{ secrets.NETBOX_TOKEN }}
+      ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_BECOME_PASSWORD }}
+      ANSIBLE_VAULT_PASSWORD_FILE: ${{ runner.temp }}/ansible-vault-password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ansible dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ansible-core==2.17.*" pynetbox netaddr
+          ansible-galaxy collection install netbox.netbox ansible.utils
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Write vault password file
+        run: |
+          printf '%s' '${{ secrets.ANSIBLE_VAULT_PASSWORD }}' > "$ANSIBLE_VAULT_PASSWORD_FILE"
+          chmod 600 "$ANSIBLE_VAULT_PASSWORD_FILE"
+
+      - name: Deploy
+        run: ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE"
