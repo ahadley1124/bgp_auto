@@ -21,7 +21,6 @@ jobs:
       NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}
       NETBOX_TOKEN: ${{ secrets.NETBOX_TOKEN }}
       ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_BECOME_PASSWORD }}
-      ANSIBLE_VAULT_PASSWORD_FILE: ${{ runner.temp }}/ansible-vault-password
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,11 +43,14 @@ jobs:
 
       - name: Write vault password file
         run: |
-          printf '%s' '${{ secrets.ANSIBLE_VAULT_PASSWORD }}' > "$ANSIBLE_VAULT_PASSWORD_FILE"
-          chmod 600 "$ANSIBLE_VAULT_PASSWORD_FILE"
+          vault_file="$RUNNER_TEMP/ansible-vault-password"
+          printf '%s' '${{ secrets.ANSIBLE_VAULT_PASSWORD }}' > "$vault_file"
+          chmod 600 "$vault_file"
 
       - name: Dry run deployment
-        run: ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --check --diff --vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE"
+        run: |
+          vault_file="$RUNNER_TEMP/ansible-vault-password"
+          ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --check --diff --vault-password-file "$vault_file"
 
   deploy:
     runs-on: ubuntu-latest
@@ -59,7 +61,6 @@ jobs:
       NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}
       NETBOX_TOKEN: ${{ secrets.NETBOX_TOKEN }}
       ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_BECOME_PASSWORD }}
-      ANSIBLE_VAULT_PASSWORD_FILE: ${{ runner.temp }}/ansible-vault-password
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -82,8 +83,11 @@ jobs:
 
       - name: Write vault password file
         run: |
-          printf '%s' '${{ secrets.ANSIBLE_VAULT_PASSWORD }}' > "$ANSIBLE_VAULT_PASSWORD_FILE"
-          chmod 600 "$ANSIBLE_VAULT_PASSWORD_FILE"
+          vault_file="$RUNNER_TEMP/ansible-vault-password"
+          printf '%s' '${{ secrets.ANSIBLE_VAULT_PASSWORD }}' > "$vault_file"
+          chmod 600 "$vault_file"
 
       - name: Deploy
-        run: ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE"
+        run: |
+          vault_file="$RUNNER_TEMP/ansible-vault-password"
+          ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --vault-password-file "$vault_file"
