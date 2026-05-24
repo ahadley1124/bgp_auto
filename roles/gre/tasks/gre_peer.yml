@@ -94,6 +94,16 @@
     - gre_existing_prefix_query.json.count | int > 0
     - gre_existing_valid_prefix | length == 0
 
+- name: Debug next available /31 request (leader only)
+  debug:
+    msg:
+      - "Requesting next /31 from: {{ netbox_api_url }}/api/ipam/prefixes/{{ gre_supernet_id }}/available-prefixes/"
+      - "Request body: {{ {'prefix_length': 31} }}"
+      - "Pair: {{ gre_pair_description }}"
+  when:
+    - inventory_hostname < gre_peer_name
+    - gre_existing_valid_prefix | length == 0
+
 - name: Request next available /31 candidate (leader only)
   uri:
     url: "{{ netbox_api_url }}/api/ipam/prefixes/{{ gre_supernet_id }}/available-prefixes/"
