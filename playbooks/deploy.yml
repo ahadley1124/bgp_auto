@@ -1,6 +1,7 @@
 - hosts: "{{ device_name | default('all') }}"
   become: true
   gather_facts: false
+  strategy: free
   roles:
     - role: bird
       tags: bird

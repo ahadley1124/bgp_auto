@@ -19,7 +19,7 @@ jobs:
       ANSIBLE_HOST_KEY_CHECKING: "False"
       NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}
       NETBOX_TOKEN: ${{ secrets.NETBOX_TOKEN }}
-      GITHUB_USER_PASS: ${{ secrets.GITHUB_USER_PASS }}
+      ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,6 +55,7 @@ jobs:
       NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}
       NETBOX_TOKEN: ${{ secrets.NETBOX_TOKEN }}
       GIT_USER_PASS: ${{ secrets.GIT_USER_PASS }}
+      ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

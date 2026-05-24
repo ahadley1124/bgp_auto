@@ -222,21 +222,51 @@
 # Ensure NetBox interfaces + IPs on dummyN
 # ---------------------------
 
-- name: Query local device ID from NetBox
+- name: Launch local device lookup
   uri:
     url: "{{ netbox_api_url }}/api/dcim/devices/?name={{ inventory_hostname | urlencode }}"
     headers:
       Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
     return_content: yes
-  register: gre_local_device_query
+  async: 60
+  poll: 0
+  register: gre_local_device_query_job
 
-- name: Query peer device ID from NetBox
+- name: Launch peer device lookup
   uri:
     url: "{{ netbox_api_url }}/api/dcim/devices/?name={{ gre_peer_name | urlencode }}"
     headers:
       Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
     return_content: yes
-  register: gre_peer_device_query
+  async: 60
+  poll: 0
+  register: gre_peer_device_query_job
+  when: inventory_hostname < gre_peer_name
+
+- name: Wait for local device lookup
+  ansible.builtin.async_status:
+    jid: "{{ gre_local_device_query_job.ansible_job_id }}"
+  register: gre_local_device_query_status
+  retries: 60
+  delay: 1
+  until: gre_local_device_query_status.finished
+
+- name: Wait for peer device lookup
+  ansible.builtin.async_status:
+    jid: "{{ gre_peer_device_query_job.ansible_job_id }}"
+  register: gre_peer_device_query_status
+  retries: 60
+  delay: 1
+  until: gre_peer_device_query_status.finished
+  when: inventory_hostname < gre_peer_name
+
+- name: Normalize NetBox device lookups
+  set_fact:
+    gre_local_device_query: "{{ gre_local_device_query_status.result | default(gre_local_device_query_status) }}"
+
+- name: Normalize peer NetBox device lookup
+  set_fact:
+    gre_peer_device_query: "{{ gre_peer_device_query_status.result | default(gre_peer_device_query_status) }}"
   when: inventory_hostname < gre_peer_name
 
 - name: Validate local device lookup
@@ -250,13 +280,49 @@
     gre_local_device_id: "{{ gre_local_device_query.json.results[0].id }}"
     gre_peer_device_id: "{{ (gre_peer_device_query.json.results[0].id) if (inventory_hostname < gre_peer_name) else omit }}"
 
-- name: Query local dummy interface
+- name: Launch local dummy interface lookup
   uri:
     url: "{{ netbox_api_url }}/api/dcim/interfaces/?device_id={{ gre_local_device_id }}&name={{ gre_dummy_if_name }}"
     headers:
       Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
     return_content: yes
-  register: gre_local_dummy_iface_query
+  async: 60
+  poll: 0
+  register: gre_local_dummy_iface_query_job
+
+- name: Launch local GRE IP lookup
+  uri:
+    url: "{{ netbox_api_url }}/api/ipam/ip-addresses/?address={{ gre_local | urlencode }}"
+    headers:
+      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+    return_content: yes
+  async: 60
+  poll: 0
+  register: gre_local_ip_query_job
+
+- name: Wait for local dummy interface lookup
+  ansible.builtin.async_status:
+    jid: "{{ gre_local_dummy_iface_query_job.ansible_job_id }}"
+  register: gre_local_dummy_iface_query_status
+  retries: 60
+  delay: 1
+  until: gre_local_dummy_iface_query_status.finished
+
+- name: Normalize local dummy interface lookup
+  set_fact:
+    gre_local_dummy_iface_query: "{{ gre_local_dummy_iface_query_status.result | default(gre_local_dummy_iface_query_status) }}"
+
+- name: Wait for local GRE IP lookup
+  ansible.builtin.async_status:
+    jid: "{{ gre_local_ip_query_job.ansible_job_id }}"
+  register: gre_local_ip_query_status
+  retries: 60
+  delay: 1
+  until: gre_local_ip_query_status.finished
+
+- name: Normalize local GRE IP lookup
+  set_fact:
+    gre_local_ip_query: "{{ gre_local_ip_query_status.result | default(gre_local_ip_query_status) }}"
 
 - name: Create local dummy interface in NetBox
   uri:
@@ -282,14 +348,6 @@
     return_content: yes
   register: gre_local_dummy_iface_final
 
-- name: Query local GRE IP in NetBox
-  uri:
-    url: "{{ netbox_api_url }}/api/ipam/ip-addresses/?address={{ gre_local | urlencode }}"
-    headers:
-      Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
-    return_content: yes
-  register: gre_local_ip_query
-
 - name: Create local GRE IP in NetBox
   uri:
     url: "{{ netbox_api_url }}/api/ipam/ip-addresses/"
@@ -309,13 +367,49 @@
 
 - name: Ensure peer dummy interface and GRE IP exist in NetBox (leader only)
   block:
-    - name: Query peer dummy interface
+    - name: Launch peer dummy interface lookup
       uri:
         url: "{{ netbox_api_url }}/api/dcim/interfaces/?device_id={{ gre_peer_device_id }}&name={{ gre_dummy_if_name }}"
         headers:
           Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
         return_content: yes
-      register: gre_peer_dummy_iface_query
+      async: 60
+      poll: 0
+      register: gre_peer_dummy_iface_query_job
+
+    - name: Launch peer GRE IP lookup
+      uri:
+        url: "{{ netbox_api_url }}/api/ipam/ip-addresses/?address={{ gre_peer | urlencode }}"
+        headers:
+          Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
+        return_content: yes
+      async: 60
+      poll: 0
+      register: gre_peer_ip_query_job
+
+    - name: Wait for peer dummy interface lookup
+      ansible.builtin.async_status:
+        jid: "{{ gre_peer_dummy_iface_query_job.ansible_job_id }}"
+      register: gre_peer_dummy_iface_query_status
+      retries: 60
+      delay: 1
+      until: gre_peer_dummy_iface_query_status.finished
+
+    - name: Normalize peer dummy interface lookup
+      set_fact:
+        gre_peer_dummy_iface_query: "{{ gre_peer_dummy_iface_query_status.result | default(gre_peer_dummy_iface_query_status) }}"
+
+    - name: Wait for peer GRE IP lookup
+      ansible.builtin.async_status:
+        jid: "{{ gre_peer_ip_query_job.ansible_job_id }}"
+      register: gre_peer_ip_query_status
+      retries: 60
+      delay: 1
+      until: gre_peer_ip_query_status.finished
+
+    - name: Normalize peer GRE IP lookup
+      set_fact:
+        gre_peer_ip_query: "{{ gre_peer_ip_query_status.result | default(gre_peer_ip_query_status) }}"
 
     - name: Create peer dummy interface in NetBox
       uri:
@@ -340,14 +434,6 @@
           Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
         return_content: yes
       register: gre_peer_dummy_iface_final
-
-    - name: Query peer GRE IP in NetBox
-      uri:
-        url: "{{ netbox_api_url }}/api/ipam/ip-addresses/?address={{ gre_peer | urlencode }}"
-        headers:
-          Authorization: "Token {{ lookup('env','NETBOX_TOKEN') }}"
-        return_content: yes
-      register: gre_peer_ip_query
 
     - name: Create peer GRE IP in NetBox
       uri:

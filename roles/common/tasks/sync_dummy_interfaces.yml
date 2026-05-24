@@ -15,7 +15,7 @@
   set_fact:
     netbox_dummy_ifaces: "{{ netbox_interfaces_query.json.results | selectattr('name', 'match', '^dummy[0-9]+$') | list }}"
 
-- name: Query IPs for dummyN interfaces
+- name: Launch IP queries for dummyN interfaces
   uri:
     url: "{{ netbox_api_url }}/api/ipam/ip-addresses/?interface_id={{ item.id }}&limit=0"
     headers:
@@ -24,12 +24,25 @@
   loop: "{{ netbox_dummy_ifaces }}"
   loop_control:
     label: "{{ item.name }}"
-  register: netbox_dummy_ips_query
+  async: 60
+  poll: 0
+  register: netbox_dummy_ips_query_jobs
+
+- name: Wait for dummyN IP queries
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ netbox_dummy_ips_query_jobs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  register: netbox_dummy_ips_query_status
+  retries: 60
+  delay: 1
+  until: netbox_dummy_ips_query_status.finished
 
 - name: Build dummy interface to IP map
   set_fact:
-    netbox_dummy_ip_map: "{{ netbox_dummy_ip_map | default({}) | combine({ item.item.name: (item.json.results | map(attribute='address') | list) }) }}"
-  loop: "{{ netbox_dummy_ips_query.results | default([]) }}"
+    netbox_dummy_ip_map: "{{ netbox_dummy_ip_map | default({}) | combine({ item.item.name: (((item.result | default(item)).json.results) | map(attribute='address') | list) }) }}"
+  loop: "{{ netbox_dummy_ips_query_status.results | default([]) }}"
   loop_control:
     label: "{{ item.item.name }}"
 
