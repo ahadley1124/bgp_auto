@@ -36,9 +36,17 @@ jobs:
           ansible-galaxy collection install netbox.netbox ansible.utils
 
       - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+
+      - name: Add SSH key
+        run: |
+          key_file="$RUNNER_TEMP/id_rsa"
+          printf '%s' '${{ secrets.SSH_PRIVATE_KEY }}' > "$key_file"
+          chmod 600 "$key_file"
+          ssh-add "$key_file"
 
       - name: Write vault password file
         run: |
@@ -76,9 +84,17 @@ jobs:
           ansible-galaxy collection install netbox.netbox ansible.utils
 
       - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+
+      - name: Add SSH key
+        run: |
+          key_file="$RUNNER_TEMP/id_rsa"
+          printf '%s' '${{ secrets.SSH_PRIVATE_KEY }}' > "$key_file"
+          chmod 600 "$key_file"
+          ssh-add "$key_file"
 
       - name: Write vault password file
         run: |
