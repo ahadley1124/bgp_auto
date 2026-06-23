@@ -3,6 +3,9 @@
 # Get loopback IP
 # ---------------------------
 
+- name: Resolve peer topology from NetBox
+  include_tasks: ../../common/tasks/get_netbox_peers.yml
+
 - name: Get loopback interface
   uri:
     url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/dcim/interfaces/?device={{ inventory_hostname | urlencode }}&name=lo"
@@ -22,45 +25,6 @@
   set_fact:
     gre_loopback_ip: "{{ lo_ip.json.results[0].address.split('/')[0] }}"
   when: lo_ip.json.results | length > 0
-
-# ---------------------------
-# Use BGP peers
-# ---------------------------
-# ---------------------------
-# ---- Build topology (reuse BGP peer selection logic so gre can run standalone) ----
-- name: Get NetBox peers if not provided by inventory
-  include_tasks: ../../common/tasks/get_netbox_peers.yml
-
-- name: Normalize NetBox peers value
-  set_fact:
-    peers_from_cf: "{{ netbox_cf_peers | default(netbox_cf_wg_peers | default([], true), true) }}"
-
-- name: Build full node list
-  set_fact:
-    all_nodes: >-
-      {{ hostvars
-         | dict2items
-         | selectattr('value.device_role', 'defined')
-         | selectattr('value.device_role.slug', 'equalto', 'router')
-         | map(attribute='key')
-         | list }}
-
-- name: Build iBGP peer list (exclude self)
-  set_fact:
-    bgp_peers: "{{ (peers_from_cf | length > 0) | ternary(peers_from_cf, (all_nodes | difference([inventory_hostname]))) | difference([inventory_hostname]) }}"
-
-- name: Identify route reflectors
-  set_fact:
-    route_reflectors: >-
-      {{ all_nodes
-         | map('extract', hostvars)
-         | selectattr('netbox_cf_bgp_role', 'equalto', 'rr')
-         | map(attribute='inventory_hostname')
-         | list }}
-
-- name: Select effective BGP peers
-  set_fact:
-    effective_bgp_peers: "{{ bgp_peers if (netbox_cf_bgp_role | default('client')) == 'rr' else (route_reflectors if (route_reflectors | length > 0) else bgp_peers) }}"
 
 - name: Set GRE peers
   set_fact:

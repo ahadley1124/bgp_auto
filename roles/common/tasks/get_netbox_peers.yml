@@ -1,5 +1,5 @@
 ---
-# Fetch device from NetBox and extract `custom_fields.peers` (or legacy `wg_peers`).
+# Resolve peer information from NetBox once and expose shared topology facts.
 - name: Query NetBox device for custom fields
   uri:
     url: "{{ lookup('env','NETBOX_API') | default(lookup('env','NETBOX_URL'), true) }}/api/dcim/devices/?name={{ inventory_hostname | urlencode }}"
@@ -8,8 +8,49 @@
     return_content: yes
   register: netbox_device
   failed_when: false
+  changed_when: false
+  when:
+    - netbox_cf_peers | default([], true) | length == 0
+    - netbox_cf_wg_peers | default([], true) | length == 0
 
 - name: Set `netbox_cf_peers` from NetBox custom fields when not present
   set_fact:
     netbox_cf_peers: "{{ netbox_device.json.results[0].custom_fields.peers | default(netbox_device.json.results[0].custom_fields.wg_peers | default([])) }}"
-  when: netbox_device.json.results | length > 0 and (netbox_cf_peers is not defined or netbox_cf_peers is none or (netbox_cf_peers | length == 0))
+  when:
+    - netbox_device is defined
+    - netbox_device.json is defined
+    - netbox_device.json.results is defined
+    - netbox_device.json.results | length > 0
+    - netbox_cf_peers is not defined or netbox_cf_peers is none or (netbox_cf_peers | length == 0)
+
+- name: Normalize NetBox peer list
+  set_fact:
+    netbox_peer_list: "{{ netbox_cf_peers | default(netbox_cf_wg_peers | default([], true), true) }}"
+
+- name: Build router inventory list
+  set_fact:
+    bgp_router_hosts: >-
+      {{ hostvars
+         | dict2items
+         | selectattr('value.device_role', 'defined')
+         | selectattr('value.device_role.slug', 'equalto', 'router')
+         | map(attribute='key')
+         | list }}
+
+- name: Build iBGP peer candidates
+  set_fact:
+    bgp_peer_candidates: "{{ (netbox_peer_list | length > 0) | ternary(netbox_peer_list, (bgp_router_hosts | difference([inventory_hostname]))) | difference([inventory_hostname]) }}"
+
+- name: Identify route reflectors
+  set_fact:
+    bgp_route_reflectors: >-
+      {{ bgp_router_hosts
+         | map('extract', hostvars)
+         | selectattr('netbox_cf_bgp_role', 'defined')
+         | selectattr('netbox_cf_bgp_role', 'equalto', 'rr')
+         | map(attribute='inventory_hostname')
+         | list }}
+
+- name: Select effective BGP peers
+  set_fact:
+    effective_bgp_peers: "{{ bgp_peer_candidates if (netbox_cf_bgp_role | default('client')) == 'rr' else (bgp_route_reflectors if (bgp_route_reflectors | length > 0) else bgp_peer_candidates) }}"

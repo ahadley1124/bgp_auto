@@ -1,6 +1,6 @@
 # bgp_auto
 
-Automated BGP, WireGuard, and GRE tunnel configuration using Ansible and NetBox.
+Automated BGP and GRE tunnel configuration using Ansible and NetBox.
 
 This repository automates the deployment of network infrastructure including:
 
@@ -27,6 +27,12 @@ All configuration is **source-controlled in NetBox** — devices, custom fields,
   ```
 
 Set `BGP_AUTO_LOCAL_MACHINE` to the inventory name of the device you are running on when that device is managed by the same playbook. Ansible will use a local connection for that host instead of SSH.
+
+### Environment Variables
+
+- `NETBOX_API` or `NETBOX_URL`: NetBox API endpoint used by the inventory plugin and API calls.
+- `NETBOX_TOKEN`: NetBox API token with read/write access as needed.
+- `BGP_AUTO_LOCAL_MACHINE`: Optional inventory hostname that should use a local connection instead of SSH.
 
 ### Run the Deployment
 
@@ -59,12 +65,11 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 
 ```text
 ├── ansible.cfg                 # Ansible configuration
-├── group_vars/all.yml         # Global variables (BGP AS, WireGuard port, etc.)
+├── group_vars/all.yml         # Global variables (BGP AS, GRE settings, etc.)
 ├── inventory/netbox.yml       # NetBox dynamic inventory plugin config
 ├── playbooks/deploy.yml       # Main deployment playbook
 ├── roles/
 │   ├── bird/                  # iBGP/OSPF/BFD configuration
-│   ├── wireguard/             # WireGuard VPN setup
 │   └── gre/                   # GRE tunnel configuration
 └── docs/                      # Documentation
 ```
@@ -74,7 +79,6 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 - **NetBox-driven configuration**: All peer data lives in NetBox custom fields
 - **Automatic iBGP mesh**: Discovers all routers and peers them together
 - **Route reflector support**: Designated route reflectors reduce mesh complexity
-- **WireGuard key sync**: Private/public keys automatically stored in NetBox
 - **Configuration validation**: BIRD config validated before reload
 - **Idempotent playbook**: Safe to run multiple times
 
