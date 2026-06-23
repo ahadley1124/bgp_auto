@@ -4,6 +4,9 @@
     state: directory
     mode: '0700'
 
+- name: Resolve peer topology from NetBox
+  include_tasks: ../../common/tasks/get_netbox_peers.yml
+
 - name: Generate private key
   ansible.builtin.command: wg genkey
   register: wg_priv
@@ -85,7 +88,7 @@
 
 - name: Set peers
   ansible.builtin.set_fact:
-    wg_peers: "{{ netbox_cf_peers | default(netbox_cf_wg_peers | default([])) }}"
+    wg_peers: "{{ netbox_peer_list | default([]) }}"
 
 - name: Set WireGuard port
   ansible.builtin.set_fact:

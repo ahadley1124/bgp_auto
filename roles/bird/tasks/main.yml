@@ -7,51 +7,16 @@
     - /etc/bird
     - /etc/bird/generated
 
-- name: Get NetBox peers if not provided by inventory
-  include_tasks: ../common/tasks/get_netbox_peers.yml
-
-- name: Normalize NetBox peers value
-  set_fact:
-    peers_from_cf: "{{ netbox_cf_peers | default(netbox_cf_wg_peers | default([], true), true) }}"
+- name: Resolve peer topology from NetBox
+  include_tasks: ../../common/tasks/get_netbox_peers.yml
 
 # ---- Get loopback IP ----
 
 - name: Get loopback IP from NetBox
-  include_tasks: ../common/tasks/get_loopback_ip.yml
+  include_tasks: ../../common/tasks/get_loopback_ip.yml
 
 - name: Sync dummyN interfaces and IPs from NetBox to Linux
-  include_tasks: ../common/tasks/sync_dummy_interfaces.yml
-
-# ---- Build topology ----
-
-- name: Build full node list
-  set_fact:
-    all_nodes: >-
-      {{ hostvars
-         | dict2items
-         | selectattr('value.device_role', 'defined')
-         | selectattr('value.device_role.slug', 'equalto', 'router')
-         | map(attribute='key')
-         | list }}
-
-- name: Build iBGP peer list (exclude self)
-  set_fact:
-    bgp_peers: "{{ (peers_from_cf | length > 0) | ternary(peers_from_cf, (all_nodes | difference([inventory_hostname]))) | difference([inventory_hostname]) }}"
-
-# ---- Optional: Route reflector logic ----
-
-- name: Identify route reflectors
-  set_fact:
-    route_reflectors: >-
-      {{ all_nodes
-         | map('extract', hostvars)
-         | selectattr('netbox_cf_bgp_role', 'equalto', 'rr')
-         | map(attribute='inventory_hostname')
-         | list }}
-
-- name: Select effective BGP peers
-  set_fact:
-    effective_bgp_peers: "{{ bgp_peers if (netbox_cf_bgp_role | default('client')) == 'rr' else (route_reflectors if (route_reflectors | length > 0) else bgp_peers) }}"
+  include_tasks: ../../common/tasks/sync_dummy_interfaces.yml
 
 # ---- Deploy configs ----
 

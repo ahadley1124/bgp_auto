@@ -2,6 +2,31 @@
   become: true
   gather_facts: false
   strategy: free
+  pre_tasks:
+    - name: Show supported deployment options
+      ansible.builtin.debug:
+        msg:
+          - "Supported extra vars:"
+          - "  device_name=<host>      Deploy to one inventory host instead of all hosts."
+          - "  bgp_as=<asn>            Override the default BGP AS number."
+          - "  local_ip=<ip>           Override the local service IP used by GRE."
+          - "  gre_force_create=true   Allow GRE creation even when NetBox data is incomplete."
+          - ""
+          - "Supported environment variables:"
+          - "  NETBOX_API or NETBOX_URL   NetBox API endpoint."
+          - "  NETBOX_TOKEN               NetBox API token."
+          - "  BGP_AUTO_LOCAL_MACHINE     Inventory hostname that should use a local Ansible connection."
+          - ""
+          - "Current deploy playbook roles:"
+          - "  bird"
+          - "  gre"
+          - ""
+          - "Example runs:"
+          - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become"
+          - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -e device_name=router01"
+          - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --check"
+      run_once: true
+      delegate_to: localhost
   roles:
     - role: bird
       tags: bird
