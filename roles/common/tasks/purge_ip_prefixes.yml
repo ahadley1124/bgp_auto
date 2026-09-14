@@ -1,0 +1,48 @@
+---
+# Remove every IPv4 address that falls inside a purged prefix from the host.
+#
+# Addresses in these prefixes are retired network-wide. They can be left over
+# on lo, local, dummyN or physical interfaces from earlier deploys, so this
+# walks the live address table instead of a single known interface. The kernel
+# does the prefix matching via the `to` selector, so no address arithmetic is
+# needed here.
+#
+# The tasks that add addresses (the NetBox dummy sync, and the GRE local and
+# loopback configuration) skip these prefixes as well, so a purged address is
+# not reapplied later in the same run.
+
+- name: Find configured addresses inside purged prefixes
+  ansible.builtin.command: "ip -o -4 addr show to {{ purge_prefix }}"
+  register: purge_ip_scan
+  changed_when: false
+  check_mode: false
+  loop: "{{ purged_ip_prefixes | default([]) }}"
+  loop_control:
+    loop_var: purge_prefix
+
+- name: Build purge list
+  ansible.builtin.set_fact:
+    purge_ip_targets: >-
+      {{ purge_ip_targets | default([])
+         + [{'device': purge_scan_line.split()[1],
+             'address': purge_scan_line.split()[3]}] }}
+  loop: "{{ purge_ip_scan.results | default([]) | map(attribute='stdout_lines') | flatten }}"
+  loop_control:
+    loop_var: purge_scan_line
+    label: "{{ purge_scan_line }}"
+  when: purge_scan_line.split() | length > 3
+
+- name: Report addresses to be purged
+  ansible.builtin.debug:
+    msg: >-
+      Purging {{ purge_ip_targets | default([]) | length }} address(es) in
+      {{ purged_ip_prefixes | default([]) | join(', ') }}:
+      {{ purge_ip_targets | default([]) | map(attribute='address') | join(', ') | default('none', true) }}
+
+- name: Remove addresses inside purged prefixes
+  ansible.builtin.command: "ip addr del {{ purge_ip_target.address }} dev {{ purge_ip_target.device }}"
+  loop: "{{ purge_ip_targets | default([]) }}"
+  loop_control:
+    loop_var: purge_ip_target
+    label: "{{ purge_ip_target.address }} on {{ purge_ip_target.device }}"
+  changed_when: true

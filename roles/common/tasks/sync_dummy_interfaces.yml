@@ -48,6 +48,26 @@
     loop_var: query_status
     label: "{{ query_status.item.item.name | default(query_status.item.item.display | default('unknown')) }}"
 
+- name: Determine dummyN IPs that fall inside purged prefixes
+  set_fact:
+    netbox_dummy_purged_ips: >-
+      {{ netbox_dummy_purged_ips | default([])
+         + (netbox_dummy_all_ips | ansible.utils.ipaddr(purge_prefix) | default([], true)) }}
+  vars:
+    netbox_dummy_all_ips: "{{ (netbox_dummy_ip_map | default({})).values() | list | flatten }}"
+  loop: "{{ purged_ip_prefixes | default([]) }}"
+  loop_control:
+    loop_var: purge_prefix
+
+- name: Warn about NetBox addresses in purged prefixes
+  ansible.builtin.debug:
+    msg: >-
+      Skipping {{ netbox_dummy_purged_ips | length }} NetBox address(es) inside
+      {{ purged_ip_prefixes | default([]) | join(', ') }}:
+      {{ netbox_dummy_purged_ips | join(', ') }}.
+      These are still recorded in NetBox; remove them there to stop the warning.
+  when: netbox_dummy_purged_ips | default([]) | length > 0
+
 - name: Ensure Linux dummyN interfaces exist
   shell: |
     ip link show dev {{ item.key }} >/dev/null 2>&1 || ip link add {{ item.key }} type dummy
@@ -58,4 +78,5 @@
 - name: Ensure dummyN interface IPs exist on Linux
   shell: ip addr add {{ item.1 }} dev {{ item.0.key }} || true
   loop: "{{ ((netbox_dummy_ip_map | default({})) | dict2items) | subelements('value') }}"
+  when: item.1 not in (netbox_dummy_purged_ips | default([]))
   changed_when: true

@@ -506,6 +506,22 @@
     ip link set local up
   changed_when: true
 
+# Addresses inside a purged prefix are retired network-wide, so they are never
+# put back onto an interface here. The pre_tasks purge removes any that are
+# already configured.
+- name: Determine GRE addresses that fall inside purged prefixes
+  set_fact:
+    gre_purged_addresses: >-
+      {{ gre_purged_addresses | default([])
+         + (gre_candidate_addresses | ansible.utils.ipaddr(purge_prefix) | default([], true)) }}
+  vars:
+    gre_candidate_addresses: >-
+      {{ [local_ip | ansible.utils.ipaddr('address'), gre_loopback_ip | default('')]
+         | select | list }}
+  loop: "{{ purged_ip_prefixes | default([]) }}"
+  loop_control:
+    loop_var: purge_prefix
+
 - name: Move local IP onto local interface
   shell: |
     for iface in $(ip -o -4 addr show | awk '$4 == "{{ local_ip | ipaddr("address") }}/32" {print $2}' | sort -u); do
@@ -514,6 +530,7 @@
       fi
     done
     ip addr add {{ local_ip | ipaddr('address') }}/32 dev local || true
+  when: (local_ip | ansible.utils.ipaddr('address')) not in (gre_purged_addresses | default([]))
   changed_when: true
 
 # ---------------------------
@@ -524,6 +541,7 @@
   shell: |
     ip addr add {{ gre_loopback_ip }}/32 dev lo || true
     ip link set lo up
+  when: (gre_loopback_ip | default('')) not in (gre_purged_addresses | default([]))
   changed_when: true
 
 # ---------------------------

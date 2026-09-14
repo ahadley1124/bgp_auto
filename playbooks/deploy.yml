@@ -2,6 +2,13 @@
   become: true
   gather_facts: false
   strategy: free
+  vars:
+    # Retired prefixes. Every IPv4 address inside these is removed from every
+    # interface on every managed host, and is never reapplied from NetBox or by
+    # the GRE role. Defined here rather than in group_vars/all.yml because that
+    # file is not on Ansible's group_vars search path for this repo layout.
+    purged_ip_prefixes:
+      - 23.190.216.0/24
   pre_tasks:
     - name: Show supported deployment options
       ansible.builtin.debug:
@@ -11,6 +18,7 @@
           - "  bgp_as=<asn>            Override the default BGP AS number."
           - "  local_ip=<ip>           Override the local service IP used by GRE."
           - "  gre_force_create=true   Allow GRE creation even when NetBox data is incomplete."
+          - "  purged_ip_prefixes=[..] Override the prefixes purged from every host."
           - ""
           - "Supported environment variables:"
           - "  NETBOX_API or NETBOX_URL   NetBox API endpoint."
@@ -27,6 +35,16 @@
           - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --check"
       run_once: true
       delegate_to: localhost
+
+    # `apply` is required so the included tasks also carry the `always` tag;
+    # a dynamic include does not pass its own tags down to its children.
+    - name: Purge retired IP prefixes from this host
+      ansible.builtin.include_tasks:
+        file: ../roles/common/tasks/purge_ip_prefixes.yml
+        apply:
+          tags: always
+      when: purged_ip_prefixes | default([]) | length > 0
+      tags: always
   roles:
     - role: bird
       tags: bird
