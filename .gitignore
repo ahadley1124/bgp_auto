@@ -3,3 +3,12 @@
 ################################################################################
 
 /.vs
+
+# Ansible Vault - the encrypted vault file is safe to commit, the password is not
+.vault_pass
+.vault_password
+vault_pass.txt
+*.vault_pass
+
+# Ansible run artifacts
+*.retry

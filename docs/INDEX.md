@@ -5,7 +5,13 @@ Welcome to `bgp_auto` documentation. This guide will help you understand the pro
 ## Quick Navigation
 
 ### 🚀 **First Time?**
-Start here → [Workflow Guide](WORKFLOW_GUIDE.md) — Step-by-step instructions to add your first router.
+Start here → [Single Server Runbook](SINGLE_SERVER.md) — Set up, run, test, and recreate one server end-to-end.
+
+### 🔐 **Storing secrets?**
+Read → [Vault as Environment Storage](VAULT_SETUP.md) — Keep the NetBox token in an Ansible Vault instead of your shell.
+
+### 🧭 **Adding more routers?**
+Read → [Workflow Guide](WORKFLOW_GUIDE.md) — Step-by-step instructions to add your next router.
 
 ### 📋 **Setting Up NetBox?**
 Read → [NetBox Setup Guide](NETBOX_SETUP.md) — Exact custom fields, devices, and IPs you need to create.
@@ -23,7 +29,37 @@ Jump to → [Troubleshooting](#troubleshooting) section or [Workflow Guide Troub
 
 ## Document Overview
 
-### 1. [Architecture Guide](ARCHITECTURE.md)
+### 1. [Single Server Runbook](SINGLE_SERVER.md)
+**What:** Setting up, running, testing, and recreating a single server
+**For:** Standing up one router and proving it works before scaling out
+**Length:** ~20 min + hands-on setup
+
+**Covers:**
+- Exactly what the playbook changes on a server
+- Control node, NetBox, and target server preparation
+- Running against one host, with dry runs and tags
+- Verification: interfaces, GRE tunnels, BIRD protocol state
+- Tearing down and rebuilding a server from NetBox
+- Retired prefixes (`purged_ip_prefixes`) and how they are enforced
+
+---
+
+### 2. [Vault as Environment Storage](VAULT_SETUP.md)
+**What:** Using Ansible Vault to hold the project's credentials
+**For:** Anyone who does not want `NETBOX_TOKEN` sitting in a shell profile
+**Length:** ~15 min read
+
+**Covers:**
+- Why the roles need secrets in the environment, not just in variables
+- Creating the vault and managing the vault password
+- The `scripts/with-vault-env.sh` wrapper
+- Migrating the roles to read vault variables directly
+- CI integration via the `ANSIBLE_VAULT_PASSWORD` secret
+- Per-environment vaults and vault IDs
+
+---
+
+### 3. [Architecture Guide](ARCHITECTURE.md)
 **What:** System architecture, data flow, configuration discovery
 **For:** Understanding how the project works
 **Length:** ~15 min read
@@ -37,7 +73,7 @@ Jump to → [Troubleshooting](#troubleshooting) section or [Workflow Guide Troub
 
 ---
 
-### 2. [NetBox Setup Guide](NETBOX_SETUP.md)
+### 4. [NetBox Setup Guide](NETBOX_SETUP.md)
 **What:** Exact NetBox configuration required for each peer
 **For:** Setting up NetBox before running playbooks
 **Length:** ~20 min + hands-on setup
@@ -58,7 +94,7 @@ Jump to → [Troubleshooting](#troubleshooting) section or [Workflow Guide Troub
 
 ---
 
-### 3. [Role Documentation](ROLE_DOCUMENTATION.md)
+### 5. [Role Documentation](ROLE_DOCUMENTATION.md)
 **What:** Deep dive into each Ansible role
 **For:** Understanding how configuration is generated and deployed
 **Length:** ~20 min read
@@ -71,7 +107,7 @@ Jump to → [Troubleshooting](#troubleshooting) section or [Workflow Guide Troub
 
 ---
 
-### 4. [Workflow Guide](WORKFLOW_GUIDE.md)
+### 6. [Workflow Guide](WORKFLOW_GUIDE.md)
 **What:** Step-by-step procedures for common tasks
 **For:** Hands-on deployment and management
 **Length:** ~30 min + hands-on execution
@@ -92,6 +128,11 @@ Jump to → [Troubleshooting](#troubleshooting) section or [Workflow Guide Troub
 ---
 
 ## Quick Start Path
+
+### Path 0: One Server, Start to Finish (45 minutes)
+
+Follow [Single Server Runbook](SINGLE_SERVER.md) straight through. It covers
+NetBox objects, server preparation, the deploy, verification, and rebuild.
 
 ### Path 1: Deploy First Router (30 minutes)
 
@@ -192,6 +233,8 @@ NetBox Device Custom Fields:
 ```
 docs/
 ├── INDEX.md (this file)               ← Start here
+├── SINGLE_SERVER.md                   ← One server, end to end
+├── VAULT_SETUP.md                     ← Secrets in Ansible Vault
 ├── ARCHITECTURE.md                    ← How it works
 ├── NETBOX_SETUP.md                    ← Setup guide
 ├── ROLE_DOCUMENTATION.md              ← Deep dive
@@ -200,14 +243,21 @@ docs/
 ../
 ├── README.md                          ← Project overview
 ├── ansible.cfg                        ← Ansible config
-├── group_vars/all.yml                 ← Global variables
+├── group_vars/all.yml                 ← Global variables (see note below)
 ├── inventory/netbox.yml               ← NetBox inventory plugin
-├── playbooks/deploy.yml               ← Main playbook
+├── playbooks/deploy.yml               ← Main playbook, and purged_ip_prefixes
+├── scripts/with-vault-env.sh          ← Vault → environment wrapper
 └── roles/
     ├── bird/                          ← BGP/OSPF/BFD role
-    ├── wireguard/                     ← VPN role
+    ├── common/                        ← Shared tasks, including the IP purge
+    ├── wireguard/                     ← VPN role (not in deploy.yml)
     └── gre/                           ← GRE tunnel role
 ```
+
+> `group_vars/all.yml` at the repo root is **not** loaded by the documented run
+> command: Ansible resolves `group_vars` next to the inventory and next to the
+> playbook. Settings that must take effect live in `playbooks/deploy.yml`, or in
+> a `group_vars/` directory beside `inventory/`.
 
 ---
 
@@ -246,6 +296,8 @@ ansible-playbook playbooks/deploy.yml --syntax-check
 | BGP peers not connecting | [Workflow Guide](WORKFLOW_GUIDE.md#issue-4-bgp-peers-not-connecting) |
 | Playbook deploy fails | [Workflow Guide](WORKFLOW_GUIDE.md#issue-5-playbook-deploy-fails-midway) |
 | Configuration not applied | [Workflow Guide](WORKFLOW_GUIDE.md#issue-6-configuration-changes-not-applied) |
+| Single server won't come up | [Single Server Runbook](SINGLE_SERVER.md#6-troubleshooting-a-single-server) |
+| Vault or credential errors | [Vault Setup](VAULT_SETUP.md#10-troubleshooting) |
 
 For more detailed troubleshooting, see [Troubleshooting Guide](WORKFLOW_GUIDE.md#troubleshooting-guide) in the Workflow Guide.
 
@@ -270,6 +322,6 @@ For more detailed troubleshooting, see [Troubleshooting Guide](WORKFLOW_GUIDE.md
 
 ---
 
-**Last updated:** 2026-05-18
+**Last updated:** 2026-09-14
 **Project:** bgp_auto
-**Documentation version:** 1.0
+**Documentation version:** 1.1

@@ -34,6 +34,15 @@ Set `BGP_AUTO_LOCAL_MACHINE` to the inventory name of the device you are running
 - `NETBOX_TOKEN`: NetBox API token with read/write access as needed.
 - `BGP_AUTO_LOCAL_MACHINE`: Optional inventory hostname that should use a local connection instead of SSH.
 
+To keep the NetBox token out of your shell environment and history, store it in an
+Ansible Vault and run through the wrapper — see
+[Vault as Environment Storage](docs/VAULT_SETUP.md):
+
+```bash
+./scripts/with-vault-env.sh \
+  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become
+```
+
 ### Run the Deployment
 
 ```bash
@@ -56,6 +65,8 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 
 ## Documentation
 
+- **[Single Server Runbook](docs/SINGLE_SERVER.md)** — Set up, run, test, and recreate one server
+- **[Vault as Environment Storage](docs/VAULT_SETUP.md)** — Keep NetBox credentials in an Ansible Vault
 - **[Architecture](docs/ARCHITECTURE.md)** — How the system works end-to-end
 - **[NetBox Setup Guide](docs/NETBOX_SETUP.md)** — Create and configure NetBox objects for each peer
 - **[Role Documentation](docs/ROLE_DOCUMENTATION.md)** — Detailed breakdown of each Ansible role
@@ -70,7 +81,9 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 ├── playbooks/deploy.yml       # Main deployment playbook
 ├── roles/
 │   ├── bird/                  # iBGP/OSPF/BFD configuration
+│   ├── common/                # Shared tasks (NetBox lookups, IP prefix purge)
 │   └── gre/                   # GRE tunnel configuration
+├── scripts/                   # Helper scripts (vault -> environment wrapper)
 └── docs/                      # Documentation
 ```
 
@@ -81,6 +94,8 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 - **Route reflector support**: Designated route reflectors reduce mesh complexity
 - **Configuration validation**: BIRD config validated before reload
 - **Idempotent playbook**: Safe to run multiple times
+- **Retired prefix enforcement**: Addresses in `purged_ip_prefixes` are removed from
+  every interface on every host, and are never reapplied from NetBox
 
 ## Configuration Hierarchy
 

@@ -178,7 +178,10 @@ protocol bfd {
 - `loopback_ip` - Router loopback IP from `netbox_cf_loopback_ip`
 - `netbox_cf_bgp_role` - `client` or `rr` for route reflector
 - `netbox_cf_ospf_enabled` - Enable OSPF, default `true`
-- `local_ip` - Managed local service IP, default `23.190.216.10`
+- `local_ip` - Managed local service IP. Has no default; the GRE role sets it to
+  `ansible_host` before use, and it can be overridden with `-e local_ip=<ip>`.
+  An address inside `purged_ip_prefixes` is never assigned - see
+  [Single Server Runbook](SINGLE_SERVER.md#retired-prefixes).
 
 #### Discovered at Runtime
 
