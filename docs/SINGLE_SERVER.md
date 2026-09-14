@@ -58,6 +58,28 @@ role both skip addresses that fall inside a purged prefix. If NetBox still has
 records in a purged prefix, the run prints a warning naming them; delete them in
 NetBox to silence it.
 
+### Before the first purge run, check what it will remove
+
+The purge deletes matching addresses from **every** interface, including
+physical ones. If a server is reachable over an address inside a purged prefix,
+removing it will cut the connection mid-play.
+
+Check the whole fleet before the first run:
+
+```bash
+ansible -i inventory/netbox.yml all -m command \
+  -a 'ip -o -4 addr show to 23.190.216.0/24' --become
+```
+
+Anything reported on a management interface, or matching the host's
+`ansible_host`, needs a new address before you deploy. A `--check` run also
+lists exactly what would be removed, per host, without removing it.
+
+The GRE role's `local_ip` is set to `ansible_host`, and the loopback comes from
+NetBox. If either falls inside a purged prefix the playbook now skips that
+assignment rather than reapplying it — so a router whose loopback is in a purged
+prefix will not form BGP sessions. Move it to a live prefix in NetBox.
+
 > The purge is defined in `playbooks/deploy.yml`, **not** in
 > `group_vars/all.yml`. With the documented run command Ansible resolves
 > `group_vars` next to the inventory and next to the playbook, so the repo-root
