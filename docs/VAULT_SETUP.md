@@ -32,22 +32,28 @@ environment variables, shell profiles, or CI secrets pasted into a terminal.
 The NetBox token is the one that really matters: it is a read/write credential
 for your source of truth.
 
-`group_vars/all.yml` already anticipates vault usage:
+`group_vars/all.yml` maps the vault variables onto the names the code uses, and
+falls back to the environment when no vault is loaded:
 
 ```yaml
-netbox_token: "{{ vault_netbox_token }}"
-netbox_url: "{{ vault_netbox_url }}"
+netbox_token: "{{ vault_netbox_token | default(lookup('env', 'NETBOX_TOKEN'), true) }}"
+netbox_url: "{{ vault_netbox_url | default(lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true), true) }}"
 ```
 
 The `vault_` prefix is the conventional indirection: the encrypted file defines
-`vault_netbox_token`, and a plaintext file maps it to the name the code uses.
+`vault_netbox_token`, and this plaintext file maps it to the name the code uses.
 That way you can grep the repo to see *where* a secret is consumed without
-decrypting anything.
+decrypting anything. Because of the fallback, the file works with or without a
+vault — a vault value wins, the environment fills in otherwise.
 
-> Two caveats about that file, both covered below: the repo-root
-> `group_vars/all.yml` is **not** on Ansible's group_vars search path for this
-> layout, and nothing in the roles actually reads the `netbox_token` variable
-> yet — they read the environment. See [section 2](#2-the-constraint-that-shapes-everything).
+Both playbooks load `group_vars/all.yml` with `vars_files`. It is **not** on
+Ansible's group_vars search path for this layout (Ansible resolves `group_vars`
+next to the inventory and next to the playbook, and this file sits at the repo
+root), so any new playbook must load it the same way.
+
+> One caveat remains, and it shapes the rest of this guide: nothing in the roles
+> reads the `netbox_token` variable yet — they read the environment. See
+> [section 2](#2-the-constraint-that-shapes-everything).
 
 ---
 
@@ -79,6 +85,10 @@ Two consequences that are easy to get wrong:
 3. **The inventory plugin runs before any play**, so it cannot use play vars at
    all. `inventory/netbox.yml` sets no `token:` or `api_endpoint:`, so
    `nb_inventory` falls back to `NETBOX_TOKEN` and `NETBOX_API`.
+
+Loading `group_vars/all.yml` (which both playbooks now do) makes `netbox_token`
+and `netbox_url` available as *variables*, but the roles do not read them yet, so
+on its own that changes nothing about which credentials are used.
 
 So a vault can be the *storage*, but the secrets must land in the environment
 before `ansible-playbook` starts. That is [Pattern A](#4-pattern-a--vault-to-environment-works-today),
@@ -222,16 +232,8 @@ vault handling decrypt it. This requires two changes.
 
 ### 5.1 Load the vault file explicitly
 
-The repo-root `group_vars/all.yml` is not auto-loaded with the documented run
-command, because Ansible resolves `group_vars` next to the **inventory**
-(`inventory/`) and next to the **playbook** (`playbooks/`) — not the repo root.
-Verify for yourself:
-
-```bash
-ansible-inventory -i inventory/netbox.yml --host router01
-```
-
-So load it explicitly in `playbooks/deploy.yml`:
+`playbooks/deploy.yml` and `playbooks/purge_ips.yml` already load
+`group_vars/all.yml`. Add the encrypted file alongside it:
 
 ```yaml
 - hosts: "{{ device_name | default('all') }}"
@@ -241,8 +243,11 @@ So load it explicitly in `playbooks/deploy.yml`:
     - ../group_vars/all.yml           # maps vault_* to the names code uses
 ```
 
-Alternatively move the files to `inventory/group_vars/all/`, where they are
-picked up automatically for this inventory.
+Order matters only for readability here — Ansible resolves the templates lazily,
+so `netbox_token` picks up `vault_netbox_token` either way.
+
+Alternatively move both files to `inventory/group_vars/all/`, where they are
+picked up automatically for this inventory and no `vars_files` entry is needed.
 
 ### 5.2 Make the roles prefer the variable
 

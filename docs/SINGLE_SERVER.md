@@ -28,9 +28,16 @@ the NetBox name as the Ansible `inventory_hostname`.
 Knowing the blast radius makes both testing and recreation straightforward.
 `playbooks/deploy.yml` runs two roles, `bird` and `gre`, plus a pre-task purge.
 
+The repository has two playbooks:
+
+| Playbook | Purpose |
+| -------- | ------- |
+| `playbooks/deploy.yml` | Full deploy: purge, then BIRD and GRE configuration |
+| `playbooks/purge_ips.yml` | Retired-prefix enforcement only, with a verification pass |
+
 | Step | Where it runs | What it creates or changes |
 | ---- | ------------- | -------------------------- |
-| Purge retired prefixes | `pre_tasks`, every host | Deletes every IPv4 address inside `purged_ip_prefixes` from **every** interface |
+| Purge retired prefixes | `pre_tasks`, every host | Deletes every IPv4 address inside `purged_ip_prefixes` from **every** interface (also available on its own as `playbooks/purge_ips.yml`) |
 | `bird` role | every host | `/etc/bird/` and `/etc/bird/generated/`, then `ibgp.conf`, `ospf.conf`, `direct.conf`, `bfd.conf` inside `generated/` |
 | `bird` role | every host | Validates with `bird -p -c /etc/bird/bird.conf`, reloads the `bird` service |
 | dummy sync | every host | Creates `dummyN` interfaces and adds their NetBox IPs |
@@ -45,12 +52,15 @@ Two things the playbook does **not** do, which you must provide yourself:
 
 ### Retired prefixes
 
-`playbooks/deploy.yml` defines:
+`group_vars/all.yml` defines:
 
 ```yaml
 purged_ip_prefixes:
   - 23.190.216.0/24
 ```
+
+Both playbooks load that file explicitly with `vars_files`, so this is the one
+place to edit.
 
 Every address inside these prefixes is removed from every interface on every
 host, on every run, and is never reapplied — the NetBox dummy sync and the GRE
@@ -64,26 +74,52 @@ The purge deletes matching addresses from **every** interface, including
 physical ones. If a server is reachable over an address inside a purged prefix,
 removing it will cut the connection mid-play.
 
-Check the whole fleet before the first run:
+Audit the whole fleet before the first run. `playbooks/purge_ips.yml` in check
+mode reports what would be removed, per host, and changes nothing:
 
 ```bash
-ansible -i inventory/netbox.yml all -m command \
-  -a 'ip -o -4 addr show to 23.190.216.0/24' --become
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become --check
 ```
 
 Anything reported on a management interface, or matching the host's
-`ansible_host`, needs a new address before you deploy. A `--check` run also
-lists exactly what would be removed, per host, without removing it.
+`ansible_host`, needs a new address before you deploy.
 
 The GRE role's `local_ip` is set to `ansible_host`, and the loopback comes from
 NetBox. If either falls inside a purged prefix the playbook now skips that
 assignment rather than reapplying it — so a router whose loopback is in a purged
 prefix will not form BGP sessions. Move it to a live prefix in NetBox.
 
-> The purge is defined in `playbooks/deploy.yml`, **not** in
-> `group_vars/all.yml`. With the documented run command Ansible resolves
-> `group_vars` next to the inventory and next to the playbook, so the repo-root
-> `group_vars/all.yml` is never loaded and a value placed there has no effect.
+### Enforcing retired prefixes on their own
+
+A full deploy purges as it goes, but you do not have to reconfigure routing just
+to retire a prefix. `playbooks/purge_ips.yml` does the purge and nothing else:
+
+```bash
+# Audit the fleet — reports what would be removed, changes nothing
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become --check
+
+# Enforce across every server
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become
+
+# One host
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become \
+  -e device_name=router01
+
+# A different prefix, without editing group_vars
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become \
+  -e '{"purged_ip_prefixes": ["198.51.100.0/24"]}'
+```
+
+After removing anything, the playbook re-scans each host and **fails** if an
+address inside a purged prefix is still present. A green run is therefore proof
+the fleet is clean, not just that the delete commands were issued. It also fails
+fast if `purged_ip_prefixes` is empty, rather than silently doing nothing.
+
+> `group_vars/all.yml` is **not** on Ansible's group_vars search path for this
+> layout — Ansible resolves `group_vars` next to the inventory and next to the
+> playbook, and this file sits at the repo root. Both playbooks therefore load it
+> explicitly with `vars_files`. A new playbook must do the same, or it will not
+> see these settings.
 
 ---
 
@@ -258,7 +294,25 @@ Useful variations:
 The purge is tagged `always`, so it runs even under `--tags bird` or
 `--tags gre`.
 
-### 3.4 Supported overrides
+### 3.4 Purge only, no deploy
+
+To retire a prefix without touching BIRD or GRE configuration, run the purge
+playbook instead. It ends by re-scanning the host and fails if anything inside a
+purged prefix survived:
+
+```bash
+# This host only
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml \
+  -e device_name=router01 --become
+
+# Whole fleet
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become
+
+# Audit first, changing nothing
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become --check
+```
+
+### 3.5 Supported overrides
 
 | Extra var | Effect |
 | --------- | ------ |
@@ -266,7 +320,7 @@ The purge is tagged `always`, so it runs even under `--tags bird` or
 | `bgp_as=<asn>` | Override the BGP AS number |
 | `local_ip=<ip>` | Override the local service IP used by GRE |
 | `gre_force_create=true` | Allow GRE creation even when NetBox data is incomplete |
-| `purged_ip_prefixes=[...]` | Override the prefixes purged from every host |
+| `purged_ip_prefixes=[...]` | Override the prefixes purged from every host. Pass as JSON: `-e '{"purged_ip_prefixes": ["198.51.100.0/24"]}'` |
 
 | Environment variable | Effect |
 | -------------------- | ------ |

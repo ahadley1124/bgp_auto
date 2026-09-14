@@ -2,13 +2,11 @@
   become: true
   gather_facts: false
   strategy: free
-  vars:
-    # Retired prefixes. Every IPv4 address inside these is removed from every
-    # interface on every managed host, and is never reapplied from NetBox or by
-    # the GRE role. Defined here rather than in group_vars/all.yml because that
-    # file is not on Ansible's group_vars search path for this repo layout.
-    purged_ip_prefixes:
-      - 23.190.216.0/24
+  # group_vars/all.yml is not on Ansible's group_vars search path for this repo
+  # layout (it resolves group_vars next to the inventory and next to the
+  # playbook), so shared settings are loaded explicitly here.
+  vars_files:
+    - ../group_vars/all.yml
   pre_tasks:
     - name: Show supported deployment options
       ansible.builtin.debug:
@@ -19,6 +17,8 @@
           - "  local_ip=<ip>           Override the local service IP used by GRE."
           - "  gre_force_create=true   Allow GRE creation even when NetBox data is incomplete."
           - "  purged_ip_prefixes=[..] Override the prefixes purged from every host."
+          - ""
+          - "Shared settings live in group_vars/all.yml (loaded via vars_files)."
           - ""
           - "Supported environment variables:"
           - "  NETBOX_API or NETBOX_URL   NetBox API endpoint."
@@ -33,6 +33,9 @@
           - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become"
           - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -e device_name=router01"
           - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --check"
+          - ""
+          - "To enforce retired prefixes without deploying BIRD/GRE config:"
+          - "  ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become"
       run_once: true
       delegate_to: localhost
 

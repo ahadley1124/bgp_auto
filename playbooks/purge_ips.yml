@@ -1,0 +1,76 @@
+# Enforce retired IP prefixes across the fleet.
+#
+# Removes every IPv4 address inside `purged_ip_prefixes` from every interface on
+# every targeted host, without deploying any BIRD or GRE configuration. Use this
+# when you need the addresses gone now, or to audit which hosts still carry them.
+#
+# The same purge also runs from playbooks/deploy.yml, so a normal deploy keeps
+# hosts clean. This playbook exists so you do not have to reconfigure routing in
+# order to retire a prefix.
+#
+# Prefixes are read from group_vars/all.yml. Override per run with
+#   -e '{"purged_ip_prefixes": ["198.51.100.0/24"]}'
+#
+# WARNING: matching addresses are removed from *every* interface, physical ones
+# included. A host reachable over an address inside a purged prefix will lose its
+# connection mid-run. Audit with --check first.
+
+- name: Purge retired IP prefixes
+  hosts: "{{ device_name | default('all') }}"
+  become: true
+  gather_facts: false
+  strategy: free
+  # group_vars/all.yml is not on Ansible's group_vars search path for this repo
+  # layout, so shared settings are loaded explicitly.
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Show purge options
+      ansible.builtin.debug:
+        msg:
+          - "Purging prefixes: {{ purged_ip_prefixes | default([]) | join(', ') | default('none', true) }}"
+          - ""
+          - "Supported extra vars:"
+          - "  device_name=<host>      Purge one inventory host instead of all hosts."
+          - "  purged_ip_prefixes=[..] Override the prefixes to purge."
+          - ""
+          - "Example runs:"
+          - "  ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become --check"
+          - "  ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become"
+          - "  ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become -e device_name=router01"
+          - ""
+          - "--check reports what would be removed without removing anything."
+      run_once: true
+      delegate_to: localhost
+
+    - name: Fail when no prefixes are configured
+      ansible.builtin.fail:
+        msg: >-
+          purged_ip_prefixes is empty. Set it in group_vars/all.yml or pass
+          -e '{"purged_ip_prefixes": ["203.0.113.0/24"]}'.
+      when: purged_ip_prefixes | default([]) | length == 0
+      run_once: true
+      delegate_to: localhost
+
+  tasks:
+    - name: Purge retired IP prefixes from this host
+      ansible.builtin.include_tasks: ../roles/common/tasks/purge_ip_prefixes.yml
+
+  post_tasks:
+    # The purge is only worth trusting if nothing puts the addresses back, so
+    # re-scan after the fact and fail loudly if anything survived.
+    - name: Verify no addresses remain inside purged prefixes
+      ansible.builtin.command: "ip -o -4 addr show to {{ purge_prefix }}"
+      register: purge_verify
+      changed_when: false
+      failed_when: purge_verify.stdout | trim | length > 0
+      loop: "{{ purged_ip_prefixes }}"
+      loop_control:
+        loop_var: purge_prefix
+      when: not ansible_check_mode
+
+    - name: Report clean
+      ansible.builtin.debug:
+        msg: "No addresses remain inside {{ purged_ip_prefixes | join(', ') }}."
+      when: not ansible_check_mode

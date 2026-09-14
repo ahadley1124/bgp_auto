@@ -63,6 +63,31 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml -e device_name=rou
 ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 ```
 
+### Enforce Retired Prefixes
+
+`playbooks/purge_ips.yml` removes every address inside `purged_ip_prefixes` from
+every interface on every host, without deploying BIRD or GRE configuration. It
+verifies afterwards and fails if anything survived.
+
+```bash
+# Audit the fleet - reports what would be removed, changes nothing
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become --check
+
+# Enforce across every server
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become
+
+# One host
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become -e device_name=router01
+
+# A different prefix, without editing group_vars
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become \
+  -e '{"purged_ip_prefixes": ["198.51.100.0/24"]}'
+```
+
+> The purge removes matching addresses from **every** interface, physical ones
+> included. Audit with `--check` before the first run — see
+> [Single Server Runbook](docs/SINGLE_SERVER.md#before-the-first-purge-run-check-what-it-will-remove).
+
 ## Documentation
 
 - **[Single Server Runbook](docs/SINGLE_SERVER.md)** — Set up, run, test, and recreate one server
@@ -76,9 +101,11 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 
 ```text
 ├── ansible.cfg                 # Ansible configuration
-├── group_vars/all.yml         # Global variables (BGP AS, GRE settings, etc.)
+├── group_vars/all.yml         # Shared variables, loaded via vars_files (see note)
 ├── inventory/netbox.yml       # NetBox dynamic inventory plugin config
-├── playbooks/deploy.yml       # Main deployment playbook
+├── playbooks/
+│   ├── deploy.yml             # Main deployment playbook
+│   └── purge_ips.yml          # Retired-prefix enforcement, standalone
 ├── roles/
 │   ├── bird/                  # iBGP/OSPF/BFD configuration
 │   ├── common/                # Shared tasks (NetBox lookups, IP prefix purge)
@@ -86,6 +113,11 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 ├── scripts/                   # Helper scripts (vault -> environment wrapper)
 └── docs/                      # Documentation
 ```
+
+> `group_vars/all.yml` is not on Ansible's group_vars search path for this layout
+> — Ansible resolves `group_vars` next to the inventory and next to the playbook.
+> Both playbooks load it explicitly with `vars_files`, and any new playbook must
+> do the same.
 
 ## Key Features
 
@@ -95,7 +127,9 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 - **Configuration validation**: BIRD config validated before reload
 - **Idempotent playbook**: Safe to run multiple times
 - **Retired prefix enforcement**: Addresses in `purged_ip_prefixes` are removed from
-  every interface on every host, and are never reapplied from NetBox
+  every interface on every host, and are never reapplied from NetBox. Enforce on its
+  own with `playbooks/purge_ips.yml`, which verifies the result and fails if an
+  address survived
 
 ## Configuration Hierarchy
 

@@ -243,9 +243,10 @@ docs/
 ../
 ├── README.md                          ← Project overview
 ├── ansible.cfg                        ← Ansible config
-├── group_vars/all.yml                 ← Global variables (see note below)
+├── group_vars/all.yml                 ← Shared variables, incl. purged_ip_prefixes
 ├── inventory/netbox.yml               ← NetBox inventory plugin
-├── playbooks/deploy.yml               ← Main playbook, and purged_ip_prefixes
+├── playbooks/deploy.yml               ← Main playbook
+├── playbooks/purge_ips.yml            ← Retired-prefix enforcement, standalone
 ├── scripts/with-vault-env.sh          ← Vault → environment wrapper
 └── roles/
     ├── bird/                          ← BGP/OSPF/BFD role
@@ -254,10 +255,10 @@ docs/
     └── gre/                           ← GRE tunnel role
 ```
 
-> `group_vars/all.yml` at the repo root is **not** loaded by the documented run
-> command: Ansible resolves `group_vars` next to the inventory and next to the
-> playbook. Settings that must take effect live in `playbooks/deploy.yml`, or in
-> a `group_vars/` directory beside `inventory/`.
+> `group_vars/all.yml` at the repo root is **not** on Ansible's group_vars search
+> path: Ansible resolves `group_vars` next to the inventory and next to the
+> playbook. Both playbooks therefore load it explicitly with `vars_files`. A new
+> playbook must do the same, or move the file beside `inventory/`.
 
 ---
 
@@ -284,6 +285,12 @@ ansible -i inventory/netbox.yml all -m ping
 **4. Is playbook syntax valid?**
 ```bash
 ansible-playbook playbooks/deploy.yml --syntax-check
+ansible-playbook playbooks/purge_ips.yml --syntax-check
+```
+
+**5. Are any retired addresses still configured?**
+```bash
+ansible-playbook -i inventory/netbox.yml playbooks/purge_ips.yml --become --check
 ```
 
 ### Common Issues

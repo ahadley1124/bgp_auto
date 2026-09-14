@@ -26,4 +26,6 @@ jobs:
         run: pip install "ansible-core==2.17.*"
 
       - name: Validate playbook syntax
-        run: ansible-playbook --syntax-check -i localhost, playbooks/deploy.yml
+        run: |
+          ansible-playbook --syntax-check -i localhost, playbooks/deploy.yml
+          ansible-playbook --syntax-check -i localhost, playbooks/purge_ips.yml

@@ -1,15 +1,36 @@
+# Shared configuration for the bgp_auto playbooks.
+#
+# This file is loaded explicitly with `vars_files` by playbooks/deploy.yml and
+# playbooks/purge_ips.yml. It is NOT picked up automatically: Ansible resolves
+# group_vars next to the inventory and next to the playbook, and this file sits
+# at the repo root. Any playbook that needs these values must load it the same
+# way. Extra vars (-e) still override everything here.
+
 bgp_as: 17290
 wg_port: 51820
-loopback_ip: "{{ netbox_cf_loopback_ip | ipaddr('address') }}"
 
-# NOTE: purged_ip_prefixes is defined in playbooks/deploy.yml, not here.
-# With the documented run command (-i inventory/netbox.yml playbooks/deploy.yml)
-# Ansible resolves group_vars next to the inventory and next to the playbook,
-# so this repo-root file is not loaded. Values here are effectively inert.
+# Retired prefixes. Every IPv4 address inside these is removed from every
+# interface on every managed host, and is never reapplied from NetBox or by the
+# GRE role. Enforce without a full deploy using playbooks/purge_ips.yml.
+purged_ip_prefixes:
+  - 23.190.216.0/24
 
-# NetBox configuration for GRE
-netbox_token: "{{ vault_netbox_token }}"
-netbox_url: "{{ vault_netbox_url }}"
+# NetBox credentials.
+#
+# The roles read the environment directly with lookup('env', ...), which is
+# evaluated on the control node. These variables exist for the vault workflow in
+# docs/VAULT_SETUP.md and fall back to the environment so this file stays usable
+# when no vault is loaded.
+netbox_token: "{{ vault_netbox_token | default(lookup('env', 'NETBOX_TOKEN'), true) }}"
+netbox_url: "{{ vault_netbox_url | default(lookup('env', 'NETBOX_API') | default(lookup('env', 'NETBOX_URL'), true), true) }}"
 
 # When true, attempt GRE tunnel creation even if facts are missing.
 gre_force_create: false
+
+# NOTE: loopback_ip is deliberately NOT set here.
+#
+# inventory/netbox.yml composes it from the NetBox custom field and leaves it
+# undefined when that field is missing. roles/bird/templates/ibgp.conf.j2 relies
+# on that `is defined` check to skip peers with incomplete data. Defining it in
+# this file would make it always "defined" — turning a cleanly skipped peer into
+# a template error — and would take precedence over the inventory value.
