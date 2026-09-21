@@ -38,24 +38,24 @@ jobs:
         with:
           python-version: "3.11"
 
-      # The wheels and the Galaxy collections were re-downloaded on every run.
-      # ansible-galaxy leaves an already-installed collection alone, so a warm
-      # cache turns the install step below into a no-op.
+      # Keyed on requirements.yml, which pins the collections, and with no
+      # restore-keys: a partial-match restore would bring back collections from
+      # an older pin, and `ansible-galaxy collection install` leaves an
+      # already-installed collection alone. Exact-match only means changing a
+      # pin costs one cold run and installs exactly what the file says.
       - name: Cache Ansible and Galaxy collections
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pip
             ~/.ansible/collections
-          key: ansible-${{ runner.os }}-py311-${{ hashFiles('.github/workflows/ansible-deploy.yml') }}
-          restore-keys: |
-            ansible-${{ runner.os }}-py311-
+          key: ansible-${{ runner.os }}-py311-${{ hashFiles('requirements.yml', '.github/workflows/ansible-deploy.yml') }}
 
       - name: Install Ansible dependencies
         run: |
           python -m pip install --upgrade pip
           pip install "ansible-core==2.17.*" pynetbox netaddr
-          ansible-galaxy collection install netbox.netbox ansible.utils
+          ansible-galaxy collection install -r requirements.yml
 
       - name: Write vault password file
         run: |
@@ -72,6 +72,10 @@ jobs:
     runs-on: self-hosted
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: dry-run
+    # The production run, on the self-hosted runner. Unbounded before, which is
+    # the wrong way round: a hung play here holds the runner and leaves the
+    # fleet half-configured with nothing timing it out.
+    timeout-minutes: 60
     env:
       ANSIBLE_HOST_KEY_CHECKING: "False"
       NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}

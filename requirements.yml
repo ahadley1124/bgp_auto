@@ -1,0 +1,18 @@
+---
+# Galaxy collections for the NetBox inventory plugin and the BIRD/GRE roles.
+#
+# Pinned on purpose. CI caches ~/.ansible/collections, and
+# `ansible-galaxy collection install` leaves an already-installed collection
+# alone, so an unpinned install behind a cache would keep whatever versions the
+# first cold run happened to fetch — indefinitely, since nothing would
+# invalidate the key. Pinning here makes the installed set explicit, and the
+# cache key is this file's hash, so changing a version below is what refreshes
+# the cache.
+#
+# Bump deliberately: a NetBox collection upgrade can change inventory
+# behaviour, which reaches the dry run and then the fleet.
+collections:
+  - name: netbox.netbox
+    version: "3.23.0"
+  - name: ansible.utils
+    version: "6.1.1"
