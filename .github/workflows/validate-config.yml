@@ -10,9 +10,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ansible-syntax-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,6 +26,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
+      - name: Cache the Ansible wheel
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ansible-syntax-${{ runner.os }}-${{ hashFiles('.github/workflows/validate-config.yml') }}
+          restore-keys: |
+            ansible-syntax-${{ runner.os }}-
 
       - name: Install Ansible
         run: pip install "ansible-core==2.17.*"

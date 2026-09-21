@@ -1,20 +1,29 @@
 name: Ansible Deploy
 
 on:
+  # Was `push: branches: "**"`, which meant every push to every working branch
+  # installed Ansible, pulled the Galaxy collections and ran a --check pass
+  # against live NetBox. The dry run only gates the deploy below, and that runs
+  # on main alone, so it now runs where it is read: on pull requests, and on
+  # main where it is the gate.
+  pull_request:
   push:
     branches:
-      - "**"
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: ansible-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  group: ansible-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Superseded pull request runs are safe to cancel. A run on main is not: it
+  # gates the deploy job below.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   dry-run:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       ANSIBLE_HOST_KEY_CHECKING: "False"
       NETBOX_API: ${{ secrets.NETBOX_API || secrets.NETBOX_URL }}
@@ -28,6 +37,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      # The wheels and the Galaxy collections were re-downloaded on every run.
+      # ansible-galaxy leaves an already-installed collection alone, so a warm
+      # cache turns the install step below into a no-op.
+      - name: Cache Ansible and Galaxy collections
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.ansible/collections
+          key: ansible-${{ runner.os }}-py311-${{ hashFiles('.github/workflows/ansible-deploy.yml') }}
+          restore-keys: |
+            ansible-${{ runner.os }}-py311-
 
       - name: Install Ansible dependencies
         run: |
