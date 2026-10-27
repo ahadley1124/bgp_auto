@@ -1,34 +1,117 @@
-- hosts: "{{ device_name | default('all') }}"
+---
+# Staged BGP rollout, driven entirely by NetBox.
+#
+#   0. localhost  read NetBox, build and validate the model, decide the rollout order
+#   1. all nodes  join the Cloudflare Mesh (in parallel; records mesh_ip in NetBox)
+#   2. localhost  re-read NetBox so the new mesh addresses are in the model
+#   3. routers    ONE AT A TIME, primary Vultr transit first, then the other transit, then IX
+#                 routers: tunnels, RPKI validator, BIRD (validate -> apply -> health -> confirm
+#                 or roll back), exporters. Any failure stops the rollout before the next router.
+#   4. monitoring Prometheus on the monitoring VM
+#   5. legacy     hosts that are not managed above keep the old bird + gre roles
+#
+# Useful variables:
+#   bgp_limit=host1,host2   only these managed hosts (the order is kept)
+#   bgp_mesh=false          skip the Mesh play (addresses already in NetBox)
+#   bgp_connection=local    run on this machine instead of over ssh (tests)
+#   device_name=<host>      same as bgp_limit, and limits the legacy play as before
+#
+# Validate without touching any host:  ansible-playbook playbooks/validate.yml
+
+- name: Read NetBox and plan the rollout
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  roles:
+    - role: netbox_model
+      tags: always
+  tasks:
+    - name: Which managed hosts were asked for
+      tags: always
+      ansible.builtin.set_fact:
+        bgp_wanted: "{{ (bgp_limit | default(device_name | default('', true), true)).split(',') | map('trim') | select | list }}"
+
+    - name: Work out which managed hosts take part, in rollout order
+      tags: always
+      ansible.builtin.set_fact:
+        bgp_selected: "{{ bgp_model_data.order | select('in', bgp_wanted) | list if bgp_wanted | length > 0 else bgp_model_data.order }}"
+
+    - name: Unknown hosts in bgp_limit
+      tags: always
+      ansible.builtin.fail:
+        msg: "Not in the NetBox model (role/status/name?): {{ bgp_wanted | difference(bgp_model_data.order) }}"
+      when: bgp_wanted | difference(bgp_model_data.order) | length > 0
+
+    - name: Build the rollout groups, in rank order
+      tags: always
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: "{{ ['bgp_managed'] + (['bgp_routers'] if bgp_model_data.nodes[item].is_router else ['bgp_monitoring']) }}"
+        ansible_host: "{{ bgp_model_data.nodes[item].mgmt_ip | default(omit) }}"
+        ansible_user: "{{ bgp_model_data.nodes[item].ansible_user | default(omit) }}"
+        ansible_connection: "{{ 'local' if item == lookup('ansible.builtin.env', 'BGP_AUTO_LOCAL_MACHINE') else (bgp_connection | default('ssh')) }}"
+      loop: "{{ bgp_selected }}"
+      changed_when: false
+
+- name: Join the Cloudflare Mesh
+  hosts: bgp_managed
+  become: true
+  gather_facts: true
+  gather_subset: [min]
+  strategy: free
+  roles:
+    - role: cloudflare_mesh
+      when: bgp_mesh | default(true) | bool and not ansible_check_mode
+      tags: mesh
+
+- name: Re-read NetBox (mesh addresses are in now)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  roles:
+    - role: netbox_model
+      tags: always
+
+- name: Roll out routers one at a time, primary first
+  hosts: bgp_routers
+  become: true
+  gather_facts: true
+  gather_subset: [min]
+  serial: 1
+  order: inventory
+  any_errors_fatal: true
+  max_fail_percentage: 0
+  roles:
+    - role: tunnels
+      when: not ansible_check_mode
+      tags: tunnels
+    - role: bgp_router
+      tags: bird
+    - role: exporters
+      tags: exporters
+
+- name: Monitoring VM
+  hosts: bgp_monitoring
+  become: true
+  gather_facts: true
+  gather_subset: [min]
+  roles:
+    - role: exporters
+      tags: exporters
+    - role: prometheus
+      tags: prometheus
+
+- name: Legacy hosts (old bird + gre roles, unchanged)
+  hosts: "{{ device_name | default('all') }}"
   become: true
   gather_facts: false
   strategy: free
-  pre_tasks:
-    - name: Show supported deployment options
-      ansible.builtin.debug:
-        msg:
-          - "Supported extra vars:"
-          - "  device_name=<host>      Deploy to one inventory host instead of all hosts."
-          - "  bgp_as=<asn>            Override the default BGP AS number."
-          - "  local_ip=<ip>           Override the local service IP used by GRE."
-          - "  gre_force_create=true   Allow GRE creation even when NetBox data is incomplete."
-          - ""
-          - "Supported environment variables:"
-          - "  NETBOX_API or NETBOX_URL   NetBox API endpoint."
-          - "  NETBOX_TOKEN               NetBox API token."
-          - "  BGP_AUTO_LOCAL_MACHINE     Inventory hostname that should use a local Ansible connection."
-          - ""
-          - "Current deploy playbook roles:"
-          - "  bird"
-          - "  gre"
-          - ""
-          - "Example runs:"
-          - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become"
-          - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -e device_name=router01"
-          - "  ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become --check"
-      run_once: true
-      delegate_to: localhost
   roles:
     - role: bird
       tags: bird
+      when: inventory_hostname not in groups['bgp_managed'] | default([]) and inventory_hostname != 'localhost'
     - role: gre
       tags: gre
+      when: inventory_hostname not in groups['bgp_managed'] | default([]) and inventory_hostname != 'localhost'

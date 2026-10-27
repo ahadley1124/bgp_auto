@@ -1,0 +1,66 @@
+---
+# Runs on localhost. Reads NetBox (devices, netbox_bgp sessions and prefix lists), turns it into
+# the per-router model with the bgp_model filter and leaves it in the facts
+# `bgp_model_data` and `bgp_irr_data` on localhost. Read-only, so it also runs in --check mode.
+# Everything that can contain a BGP password is no_log.
+- name: Create the work directory
+  ansible.builtin.file:
+    path: "{{ netbox_model_work_dir }}"
+    state: directory
+    mode: "0700"
+  check_mode: false
+
+- name: Fetch BGP data from NetBox
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ netbox_model_fetch_script }}"
+      - fetch
+  environment:
+    NETBOX_URL: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') or lookup('ansible.builtin.env', 'NETBOX_API') }}"
+    NETBOX_TOKEN: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+  register: netbox_model_fetch
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Build the model (first pass, to learn which IRR sets are needed)
+  ansible.builtin.set_fact:
+    netbox_model_first: "{{ netbox_model_fetch.stdout | from_json | bgp_model(bgp_policy) }}"
+  no_log: true
+
+- name: Fetch IRR prefix lists with bgpq4
+  ansible.builtin.command:
+    argv: >-
+      {{ [ansible_playbook_python, netbox_model_irr_script,
+          '--out', netbox_model_work_dir ~ '/irr.json',
+          '--cache', netbox_model_work_dir ~ '/irr-cache',
+          '--ttl', netbox_model_irr_ttl_hours | string,
+          '--sources', netbox_model_irr_sources,
+          '--bgpq4', netbox_model_bgpq4] + netbox_model_first.irr_sets }}
+  when:
+    - netbox_model_first.irr_sets | length > 0
+    - netbox_model_irr_file | length == 0
+  changed_when: false
+  check_mode: false
+
+- name: Load IRR prefix lists
+  ansible.builtin.set_fact:
+    bgp_irr_data: >-
+      {{ (lookup('ansible.builtin.file', netbox_model_irr_file or (netbox_model_work_dir ~ '/irr.json')) | from_json)
+         if (netbox_model_first.irr_sets | length > 0) else {} }}
+  no_log: true
+
+- name: Build the model
+  ansible.builtin.set_fact:
+    bgp_model_data: "{{ netbox_model_fetch.stdout | from_json | bgp_model(bgp_policy) }}"
+  no_log: true
+
+- name: Stop if NetBox data is incomplete or inconsistent
+  ansible.builtin.fail:
+    msg: "{{ ['NetBox data problems, nothing was changed:'] + bgp_model_data.errors }}"
+  when: bgp_model_data.errors | length > 0
+
+- name: Show the rollout order
+  ansible.builtin.debug:
+    msg: "Rollout order: {{ bgp_model_data.order | join(' -> ') }} (primary: {{ bgp_model_data.primary }})"

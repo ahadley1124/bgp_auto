@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+# OSPF underlay over the GRE tunnels. Its only job is to announce each router's
+# loopbacks so the iBGP sessions (loopback to loopback) have something to ride on.
+protocol ospf v2 ospf4 {
+    description "Underlay: IPv4 loopbacks";
+    ipv4 {
+        import all;
+        export none;
+    };
+    area 0 {
+        stubnet {{ node.loopback4 }}/32 { hidden no; summary no; cost 1; };
+        interface "{{ gre_ifname_prefix }}*" {
+            type ptp;
+            cost {{ node.policy.ospf_cost }};
+            hello {{ node.policy.ospf_hello }};
+            dead {{ node.policy.ospf_dead }};
+        };
+    };
+}
+{% if node.loopback6 %}
+
+protocol ospf v3 ospf6 {
+    description "Underlay: IPv6 loopbacks";
+    ipv6 {
+        import all;
+        export none;
+    };
+    area 0 {
+        stubnet {{ node.loopback6 }}/128 { hidden no; summary no; cost 1; };
+        interface "{{ gre_ifname_prefix }}*" {
+            type ptp;
+            cost {{ node.policy.ospf_cost }};
+            hello {{ node.policy.ospf_hello }};
+            dead {{ node.policy.ospf_dead }};
+        };
+    };
+}
+{% endif %}

@@ -1,0 +1,104 @@
+# {{ ansible_managed }}
+# External sessions from NetBox (netbox_bgp). Change a session's status to
+# "offline" in NetBox and it disappears from this file on the next deploy.
+{% set nbr = node.sessions | selectattr('neighbor_interface') | list %}
+{% for fam in [4, 6] %}
+{% set rows = nbr | selectattr('family', 'equalto', fam) | list %}
+{% if rows %}
+
+# Neighbors reached over a link-local / on-link address (for example Vultr's
+# 169.254.169.254). Needed so BIRD can resolve the next hop of multihop sessions.
+protocol static static_nbr{{ fam }} {
+    ipv{{ fam }} {
+        import filter { bgp_large_community.add(LC_NEIGHBOR_ROUTE); accept; };
+    };
+{% for s in rows %}
+    route {{ s.remote_address }}/{{ 32 if fam == 4 else 128 }} via "{{ s.neighbor_interface }}";
+{% endfor %}
+}
+{% endif %}
+{% endfor %}
+{% for s in node.sessions %}
+{% set lc = {'transit': 'LC_FROM_TRANSIT', 'ix-rs': 'LC_FROM_IX_RS', 'ix-bilateral': 'LC_FROM_IX_BILATERAL', 'customer': 'LC_FROM_CUSTOMER'}[s.class] %}
+
+filter IMP_{{ s.pname }} {
+    # Only we may set communities with our own ASN.
+    bgp_community.delete([(OWN_AS, *)]);
+    bgp_large_community.delete([(OWN_AS, *, *)]);
+{% if s.accept_default %}
+    if net = {{ '0.0.0.0/0' if s.family == 4 else '::/0' }} then {
+        bgp_local_pref = {{ s.local_pref }};
+        bgp_large_community.add({{ lc }});
+        accept;
+    }
+{% else %}
+    if net = {{ '0.0.0.0/0' if s.family == 4 else '::/0' }} then reject;
+{% endif %}
+    if is_bogon_prefix() then reject;
+    if bad_prefix_len() then reject;
+    if is_own_space() then reject;
+    if bad_as_path({{ 'true' if s.allow_private_as else 'false' }}) then reject;
+{% if s.class in ['ix-rs', 'ix-bilateral'] %}
+    if path_has_tier1() then reject;
+{% endif %}
+    if rpki_invalid() then reject;
+{% if s.irr_filter and s.irr_name in irr_empty %}
+    reject;
+{% elif s.irr_filter %}
+    if !(net ~ {{ s.irr_name }}) then reject;
+{% endif %}
+{% if s.import_prefix_list and node.static_lists[s.import_prefix_list] %}
+    if !(net ~ STATIC_{{ s.import_prefix_list | bgp_bird_name }}) then reject;
+{% endif %}
+    bgp_local_pref = {{ s.local_pref }};
+    # RFC 8326 graceful shutdown: a peer draining its session tags routes 65535:0.
+    if (65535, 0) ~ bgp_community then bgp_local_pref = 0;
+    if rpki_valid() then bgp_large_community.add(LC_RPKI_VALID);
+    else bgp_large_community.add(LC_RPKI_UNKNOWN);
+    bgp_large_community.add({{ lc }});
+    bgp_large_community.add(LC_LEARNED_AT);
+    accept;
+}
+
+filter EXP_{{ s.pname }} {
+    if !export_ok() then reject;
+{% if s.graceful_shutdown %}
+    bgp_community.add((65535, 0));
+{% endif %}
+{% for i in range(s.prepend) %}
+    bgp_path.prepend({{ s.local_as }});
+{% endfor %}
+    # Keep our internal communities inside the AS.
+    bgp_large_community.delete([(OWN_AS, *, *)]);
+    accept;
+}
+
+protocol bgp {{ s.pname }} {
+    description "{{ s.label }} AS{{ s.remote_as }} ({{ s.class }}{{ ', ' ~ s.peer_group if s.peer_group else '' }})";
+{% if s.local_address %}
+    local {{ s.local_address }} as {{ s.local_as }};
+{% else %}
+    local as {{ s.local_as }};
+{% endif %}
+    neighbor {{ s.remote_address }} as {{ s.remote_as }};
+{% if s.multihop %}
+    multihop {{ s.multihop }};
+{% endif %}
+{% if s.password %}
+    password "{{ s.password }}";
+{% endif %}
+{% if s.enforce_first_as %}
+    enforce first as yes;
+{% endif %}
+    graceful restart on;
+{% if s.bfd %}
+    bfd on;
+{% endif %}
+    ipv{{ s.family }} {
+        import keep filtered;
+        import filter IMP_{{ s.pname }};
+        export filter EXP_{{ s.pname }};
+        receive limit {{ s.max_prefix }} action {{ s.max_prefix_action }};
+    };
+}
+{% endfor %}

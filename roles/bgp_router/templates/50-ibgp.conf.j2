@@ -1,0 +1,51 @@
+# {{ ansible_managed }}
+# iBGP between loopbacks. The loopbacks are reachable because OSPF announces them.
+# The two transit routers are route reflectors; IX routers are clients of their hub.
+{% for p in node.ibgp %}
+
+protocol bgp {{ p.p4 }} {
+    description "iBGP {{ node.name }} to {{ p.peer }} (IPv4 loopback){{ ', RR client' if p.client else '' }}";
+    local {{ node.loopback4 }} as OWN_AS;
+    neighbor {{ p.lo4 }} as OWN_AS;
+    multihop 16;
+    hold time 30;
+    keepalive time 10;
+    graceful restart on;
+{% if p.client %}
+    rr client;
+    rr cluster id {{ node.loopback4 }};
+{% endif %}
+{% if node.policy.ibgp_bfd %}
+    bfd on;
+{% endif %}
+    ipv4 {
+        next hop self;
+        import all;
+        export all;
+    };
+}
+{% if p.lo6 and node.loopback6 %}
+
+protocol bgp {{ p.p6 }} {
+    description "iBGP {{ node.name }} to {{ p.peer }} (IPv6 loopback){{ ', RR client' if p.client else '' }}";
+    local {{ node.loopback6 }} as OWN_AS;
+    neighbor {{ p.lo6 }} as OWN_AS;
+    multihop 16;
+    hold time 30;
+    keepalive time 10;
+    graceful restart on;
+{% if p.client %}
+    rr client;
+    rr cluster id {{ node.loopback4 }};
+{% endif %}
+{% if node.policy.ibgp_bfd %}
+    bfd on;
+{% endif %}
+    ipv6 {
+        next hop self;
+        import all;
+        export all;
+    };
+}
+{% endif %}
+{% endfor %}

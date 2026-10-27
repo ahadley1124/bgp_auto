@@ -1,0 +1,53 @@
+---
+# Prometheus on the monitoring VM. Scrape targets are every managed node's mesh address,
+# taken from NetBox through the model, so a new router is monitored on the next run.
+# Grafana adds this as a data source at http://<monitoring mesh ip>:9090.
+- name: Load the model
+  ansible.builtin.set_fact:
+    prom_node: "{{ hostvars['localhost'].bgp_model_data.nodes[inventory_hostname] }}"
+    prom_nodes: "{{ hostvars['localhost'].bgp_model_data.nodes.values() | selectattr('mesh_ip') | sort(attribute='rank') | list }}"
+  no_log: true
+
+- name: Stop if the mesh address is unknown
+  ansible.builtin.fail:
+    msg: "{{ inventory_hostname }} has no mesh_ip yet"
+  when: not prom_node.mesh_ip
+
+- name: Install Prometheus
+  ansible.builtin.apt:
+    name: prometheus
+    state: present
+    update_cache: true
+  when: not ansible_check_mode
+
+- name: Alert rules
+  ansible.builtin.template:
+    src: bgp-auto-rules.yml.j2
+    dest: /etc/prometheus/bgp-auto-rules.yml
+    mode: "0644"
+    validate: promtool check rules %s
+  notify: restart prometheus
+
+- name: Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    mode: "0644"
+    validate: promtool check config %s
+  notify: restart prometheus
+
+- name: Listen on the mesh address only
+  ansible.builtin.copy:
+    dest: /etc/default/prometheus
+    mode: "0644"
+    content: |
+      # {{ ansible_managed }}
+      ARGS="--web.listen-address={{ prom_node.mesh_ip }}:{{ prometheus_port }} --storage.tsdb.retention.time={{ prometheus_retention }}"
+  notify: restart prometheus
+
+- name: Prometheus enabled and running
+  ansible.builtin.systemd:
+    name: prometheus
+    state: started
+    enabled: true
+  when: not ansible_check_mode

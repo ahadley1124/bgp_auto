@@ -1,0 +1,46 @@
+---
+# Exporters listen on the Cloudflare Mesh address only, so the monitoring VM reaches them
+# through the mesh and nothing is exposed on the public interface.
+- name: Load this host's model
+  ansible.builtin.set_fact:
+    exp_node: "{{ hostvars['localhost'].bgp_model_data.nodes[inventory_hostname] }}"
+  no_log: true
+
+- name: Stop if the mesh address is unknown
+  ansible.builtin.fail:
+    msg: "{{ inventory_hostname }} has no mesh_ip yet; the mesh role must run first"
+  when: not exp_node.mesh_ip
+
+- name: Install the exporters
+  ansible.builtin.apt:
+    name: "{{ ['prometheus-node-exporter'] + (['prometheus-bird-exporter'] if exp_node.is_router else []) }}"
+    state: present
+    update_cache: true
+  when: not ansible_check_mode
+
+- name: node exporter arguments
+  ansible.builtin.copy:
+    dest: /etc/default/prometheus-node-exporter
+    mode: "0644"
+    content: |
+      # {{ ansible_managed }}
+      ARGS="--web.listen-address={{ exp_node.mesh_ip }}:{{ exporter_node_port }} --collector.systemd"
+  notify: restart node exporter
+
+- name: BIRD exporter arguments
+  ansible.builtin.copy:
+    dest: /etc/default/prometheus-bird-exporter
+    mode: "0644"
+    content: |
+      # {{ ansible_managed }}
+      ARGS="-web.listen-address={{ exp_node.mesh_ip }}:{{ exporter_bird_port }} -bird.v2 -bird.socket={{ exporter_bird_socket }} -format.new=true"
+  when: exp_node.is_router
+  notify: restart bird exporter
+
+- name: Exporters enabled and running
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: "{{ ['prometheus-node-exporter'] + (['prometheus-bird-exporter'] if exp_node.is_router else []) }}"
+  when: not ansible_check_mode

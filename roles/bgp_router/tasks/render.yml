@@ -1,0 +1,46 @@
+---
+# Render a node's BIRD config into render_dir. Inputs: render_node, render_dir.
+- name: Work out the IRR prefix sets for this router
+  ansible.builtin.set_fact:
+    render_irr: "{{ hostvars['localhost'].bgp_irr_data | bgp_irr_defines(render_node.sessions) }}"
+  no_log: true
+
+- name: Create the render directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ render_dir }}"
+    - "{{ render_dir }}/generated"
+
+- name: Render bird.conf
+  ansible.builtin.template:
+    src: bird.conf.j2
+    dest: "{{ render_dir }}/bird.conf"
+    mode: "0640"
+  vars:
+    node: "{{ render_node }}"
+    irr_text: "{{ render_irr[0] }}"
+    irr_empty: "{{ render_irr[1] }}"
+    bird_uses_bfd: "{{ render_node.policy.ibgp_bfd or (render_node.sessions | selectattr('bfd') | list | length > 0) }}"
+  no_log: true
+
+- name: Render the generated config files
+  ansible.builtin.template:
+    src: "{{ item }}.conf.j2"
+    dest: "{{ render_dir }}/generated/{{ item }}.conf"
+    mode: "0640"
+  vars:
+    node: "{{ render_node }}"
+    irr_text: "{{ render_irr[0] }}"
+    irr_empty: "{{ render_irr[1] }}"
+    bird_uses_bfd: "{{ render_node.policy.ibgp_bfd or (render_node.sessions | selectattr('bfd') | list | length > 0) }}"
+  loop: [00-defs, 10-rpki, 20-filters, 25-prefix-sets, 30-base, 40-ospf, 50-ibgp, 60-originate, 70-ebgp, 80-bfd]
+  no_log: true
+
+- name: Check the rendered config with BIRD
+  ansible.builtin.command:
+    argv: ["{{ bird_bin }}", "-p", "-c", "{{ render_dir }}/bird.conf"]
+  changed_when: false
+  check_mode: false

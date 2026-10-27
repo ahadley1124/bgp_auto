@@ -90,3 +90,9 @@ ansible-playbook -i inventory/netbox.yml playbooks/deploy.yml --become -vvv
 4. **Roles** generate and deploy configuration files
 
 See [Architecture](docs/ARCHITECTURE.md) for detailed flow diagrams and examples.
+
+## Dual-transit BGP (Vultr primary + Netherlands)
+
+New roles (`netbox_model`, `cloudflare_mesh`, `tunnels`, `bgp_router`, `exporters`, `prometheus`) drive
+BIRD 3 from NetBox with a staged, validated, self-reverting rollout. See [docs/DUAL_TRANSIT.md](docs/DUAL_TRANSIT.md).
+The older `bird`, `gre` and `wireguard` roles still run for hosts that are not part of it.

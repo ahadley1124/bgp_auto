@@ -1,0 +1,47 @@
+# {{ ansible_managed }}
+# Metric names follow czerwonk/bird_exporter (new format). Check them against /metrics on the
+# first deploy; the BIRD 3 + exporter combination has not been tested here.
+groups:
+  - name: bgp-auto
+    rules:
+      - alert: ScrapeTargetDown
+        expr: up == 0
+        for: 3m
+        labels: {severity: warning}
+        annotations: {summary: "{% raw %}{{ $labels.instance }}{% endraw %}: {% raw %}{{ $labels.job }}{% endraw %} exporter not reachable"}
+
+      - alert: BgpSessionDown
+        expr: bird_protocol_up{proto="BGP"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "{% raw %}{{ $labels.instance }}{% endraw %}: BGP session {% raw %}{{ $labels.name }}{% endraw %} is down"}
+
+      - alert: RpkiCacheDown
+        expr: bird_protocol_up{proto="RPKI"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "{% raw %}{{ $labels.instance }}{% endraw %}: RPKI session {% raw %}{{ $labels.name }}{% endraw %} is down (ROV is failing open)"}
+
+      - alert: TransitFullTableTooSmallV4
+        expr: bird_protocol_prefix_import_count{proto="BGP", name=~"tr_.*", ip_version="4"} < {{ prometheus_min_transit_prefixes_v4 }}
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "{% raw %}{{ $labels.instance }}{% endraw %}: {% raw %}{{ $labels.name }}{% endraw %} imported only {% raw %}{{ $value }}{% endraw %} IPv4 prefixes"}
+
+      - alert: TransitFullTableTooSmallV6
+        expr: bird_protocol_prefix_import_count{proto="BGP", name=~"tr_.*", ip_version="6"} < {{ prometheus_min_transit_prefixes_v6 }}
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "{% raw %}{{ $labels.instance }}{% endraw %}: {% raw %}{{ $labels.name }}{% endraw %} imported only {% raw %}{{ $value }}{% endraw %} IPv6 prefixes"}
+
+      - alert: GreTunnelDown
+        expr: node_network_up{device=~"gre-.*"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "{% raw %}{{ $labels.instance }}{% endraw %}: tunnel {% raw %}{{ $labels.device }}{% endraw %} is down"}
+
+      - alert: OspfNoNeighbors
+        expr: bird_ospf_neighbor_count == 0
+        for: 3m
+        labels: {severity: warning}
+        annotations: {summary: "{% raw %}{{ $labels.instance }}{% endraw %}: OSPF {% raw %}{{ $labels.name }}{% endraw %} has no neighbours"}

@@ -1,0 +1,449 @@
+{
+ "devices": [
+  {
+   "id": 1,
+   "name": "vultr-transit",
+   "role": {
+    "slug": "transit-router"
+   },
+   "site": {
+    "slug": "vultr-chi"
+   },
+   "status": {
+    "value": "active"
+   },
+   "primary_ip4": {
+    "address": "203.0.113.10/32"
+   },
+   "custom_fields": {
+    "loopback_ip": "10.255.255.1/32",
+    "loopback_ip6": "fd17:290::1/128",
+    "bgp_primary": true,
+    "hub": null,
+    "short_name": "vultr",
+    "mesh_ip": null,
+    "ansible_user": "ansible",
+    "bgp_role": "rr"
+   }
+  },
+  {
+   "id": 2,
+   "name": "nl-transit",
+   "role": {
+    "slug": "transit-router"
+   },
+   "site": {
+    "slug": "nl-1"
+   },
+   "status": {
+    "value": "active"
+   },
+   "primary_ip4": {
+    "address": "198.18.0.2/32"
+   },
+   "custom_fields": {
+    "loopback_ip": "10.255.255.2/32",
+    "loopback_ip6": "fd17:290::2/128",
+    "bgp_primary": false,
+    "hub": null,
+    "short_name": "nl",
+    "mesh_ip": null,
+    "ansible_user": "ansible",
+    "bgp_role": "rr"
+   }
+  },
+  {
+   "id": 3,
+   "name": "vultr-ix1",
+   "role": {
+    "slug": "ix-router"
+   },
+   "site": {
+    "slug": "vultr-chi"
+   },
+   "status": {
+    "value": "active"
+   },
+   "primary_ip4": {
+    "address": "198.18.0.3/32"
+   },
+   "custom_fields": {
+    "loopback_ip": "10.255.255.11/32",
+    "loopback_ip6": "fd17:290::11/128",
+    "bgp_primary": false,
+    "hub": "vultr-transit",
+    "short_name": "vix1",
+    "mesh_ip": null,
+    "ansible_user": "ansible"
+   }
+  },
+  {
+   "id": 4,
+   "name": "nl-ix1",
+   "role": {
+    "slug": "ix-router"
+   },
+   "site": {
+    "slug": "nl-1"
+   },
+   "status": {
+    "value": "active"
+   },
+   "primary_ip4": {
+    "address": "198.18.0.4/32"
+   },
+   "custom_fields": {
+    "loopback_ip": "10.255.255.12/32",
+    "loopback_ip6": "fd17:290::12/128",
+    "bgp_primary": false,
+    "hub": "nl-transit",
+    "short_name": "nix1",
+    "mesh_ip": null,
+    "ansible_user": "ansible"
+   }
+  },
+  {
+   "id": 5,
+   "name": "mon-vultr",
+   "role": {
+    "slug": "monitoring"
+   },
+   "site": {
+    "slug": "vultr-chi"
+   },
+   "status": {
+    "value": "active"
+   },
+   "primary_ip4": {
+    "address": "198.18.0.5/32"
+   },
+   "custom_fields": {
+    "loopback_ip": null,
+    "loopback_ip6": null,
+    "bgp_primary": false,
+    "hub": null,
+    "short_name": "mon",
+    "mesh_ip": null,
+    "ansible_user": "ansible"
+   }
+  }
+ ],
+ "sessions": [
+  {
+   "id": 1,
+   "name": "vultr-v4",
+   "device": {
+    "id": 0,
+    "name": "vultr-transit"
+   },
+   "local_address": {
+    "address": "203.0.113.10/32"
+   },
+   "remote_address": {
+    "address": "169.254.169.254/32"
+   },
+   "local_as": {
+    "asn": 17290
+   },
+   "remote_as": {
+    "asn": 64515
+   },
+   "peer_group": null,
+   "status": {
+    "value": "active"
+   },
+   "custom_fields": {
+    "session_class": "transit",
+    "bgp_password": "vultrSecret1",
+    "multihop_ttl": 2,
+    "allow_private_as": true,
+    "neighbor_interface": "enp1s0"
+   }
+  },
+  {
+   "id": 2,
+   "name": "vultr-v6",
+   "device": {
+    "id": 0,
+    "name": "vultr-transit"
+   },
+   "local_address": {
+    "address": "2001:db8:10::10/128"
+   },
+   "remote_address": {
+    "address": "2001:19f0:ffff::1/128"
+   },
+   "local_as": {
+    "asn": 17290
+   },
+   "remote_as": {
+    "asn": 64515
+   },
+   "peer_group": null,
+   "status": {
+    "value": "active"
+   },
+   "custom_fields": {
+    "session_class": "transit",
+    "bgp_password": "vultrSecret1",
+    "multihop_ttl": 2,
+    "allow_private_as": true
+   }
+  },
+  {
+   "id": 3,
+   "name": "nl-v4",
+   "device": {
+    "id": 0,
+    "name": "nl-transit"
+   },
+   "local_address": {
+    "address": "198.51.100.2/32"
+   },
+   "remote_address": {
+    "address": "198.51.100.1/32"
+   },
+   "local_as": {
+    "asn": 17290
+   },
+   "remote_as": {
+    "asn": 205941
+   },
+   "peer_group": null,
+   "status": {
+    "value": "active"
+   },
+   "custom_fields": {
+    "session_class": "transit",
+    "export_prepend": 3,
+    "bgp_password": "nlSecret1"
+   }
+  },
+  {
+   "id": 4,
+   "name": "nl-v6",
+   "device": {
+    "id": 0,
+    "name": "nl-transit"
+   },
+   "local_address": {
+    "address": "2001:db8:100::2/128"
+   },
+   "remote_address": {
+    "address": "2001:db8:100::1/128"
+   },
+   "local_as": {
+    "asn": 17290
+   },
+   "remote_as": {
+    "asn": 205941
+   },
+   "peer_group": null,
+   "status": {
+    "value": "active"
+   },
+   "custom_fields": {
+    "session_class": "transit",
+    "export_prepend": 3,
+    "bgp_password": "nlSecret1"
+   }
+  },
+  {
+   "id": 5,
+   "name": "ix1-rs1-v4",
+   "device": {
+    "id": 0,
+    "name": "vultr-ix1"
+   },
+   "local_address": {
+    "address": "192.0.2.10/32"
+   },
+   "remote_address": {
+    "address": "192.0.2.1/32"
+   },
+   "local_as": {
+    "asn": 17290
+   },
+   "remote_as": {
+    "asn": 64496
+   },
+   "peer_group": null,
+   "status": {
+    "value": "active"
+   },
+   "custom_fields": {
+    "session_class": "ix-rs",
+    "max_prefix": 150000
+   }
+  },
+  {
+   "id": 6,
+   "name": "ix1-rs1-v6",
+   "device": {
+    "id": 0,
+    "name": "vultr-ix1"
+   },
+   "local_address": {
+    "address": "2001:db8:ffff::10/128"
+   },
+   "remote_address": {
+    "address": "2001:db8:ffff::1/128"
+   },
+   "local_as": {
+    "asn": 17290
+   },
+   "remote_as": {
+    "asn": 64496
+   },
+   "peer_group": null,
+   "status": {
+    "value": "active"
+   },
+   "custom_fields": {
+    "session_class": "ix-rs",
+    "max_prefix": 60000
+   }
+  },
+  {
+   "id": 7,
+   "name": "ix1-peer-v4",
+   "device": {
+    "id": 0,
+    "name": "vultr-ix1"
+   },
+   "local_address": {
+    "address": "192.0.2.10/32"
+   },
+   "remote_address": {
+    "address": "192.0.2.77/32"
+   },
+   "local_as": {
+    "asn": 17290
+   },
+   "remote_as": {
+    "asn": 64497
+   },
+   "peer_group": null,
+   "status": {
+    "value": "active"
+   },
+   "custom_fields": {
+    "session_class": "ix-bilateral",
+    "irr_as_set": "AS-EXAMPLE",
+    "max_prefix": 100
+   }
+  },
+  {
+   "id": 8,
+   "name": "ix1-planned",
+   "device": {
+    "id": 0,
+    "name": "vultr-ix1"
+   },
+   "local_address": {
+    "address": "192.0.2.10/32"
+   },
+   "remote_address": {
+    "address": "192.0.2.88/32"
+   },
+   "local_as": {
+    "asn": 17290
+   },
+   "remote_as": {
+    "asn": 64498
+   },
+   "peer_group": null,
+   "status": {
+    "value": "planned"
+   },
+   "custom_fields": {
+    "session_class": "ix-bilateral"
+   }
+  },
+  {
+   "id": 9,
+   "name": "nlix-rs1-v4",
+   "device": {
+    "id": 0,
+    "name": "nl-ix1"
+   },
+   "local_address": {
+    "address": "203.0.113.200/32"
+   },
+   "remote_address": {
+    "address": "203.0.113.1/32"
+   },
+   "local_as": {
+    "asn": 17290
+   },
+   "remote_as": {
+    "asn": 64499
+   },
+   "peer_group": null,
+   "status": {
+    "value": "active"
+   },
+   "custom_fields": {
+    "session_class": "ix-rs"
+   }
+  }
+ ],
+ "prefix_lists": [
+  {
+   "id": 1,
+   "name": "OWN-V4",
+   "family": {
+    "value": 4
+   }
+  },
+  {
+   "id": 2,
+   "name": "OWN-V6",
+   "family": {
+    "value": 6
+   }
+  }
+ ],
+ "prefix_list_rules": [
+  {
+   "id": 1,
+   "index": 10,
+   "action": "permit",
+   "prefix_list": {
+    "id": 1,
+    "name": "OWN-V4"
+   },
+   "prefix": null,
+   "prefix_custom": "192.0.2.0/24",
+   "ge": null,
+   "le": null
+  },
+  {
+   "id": 2,
+   "index": 20,
+   "action": "permit",
+   "prefix_list": {
+    "id": 1,
+    "name": "OWN-V4"
+   },
+   "prefix": null,
+   "prefix_custom": "198.18.0.0/22",
+   "ge": 22,
+   "le": 24
+  },
+  {
+   "id": 3,
+   "index": 10,
+   "action": "permit",
+   "prefix_list": {
+    "id": 2,
+    "name": "OWN-V6"
+   },
+   "prefix": null,
+   "prefix_custom": "2001:db8:5000::/36",
+   "ge": null,
+   "le": 48
+  }
+ ],
+ "tagged_prefixes": []
+}

@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+global:
+  scrape_interval: {{ prometheus_scrape_interval }}
+  evaluation_interval: {{ prometheus_scrape_interval }}
+
+rule_files:
+  - /etc/prometheus/bgp-auto-rules.yml
+
+scrape_configs:
+  - job_name: node
+    static_configs:
+{% for n in prom_nodes %}
+      - targets: ["{{ n.mesh_ip }}:{{ exporter_node_port }}"]
+        labels: {instance: "{{ n.name }}", site: "{{ n.site or '' }}", role: "{{ n.role }}"}
+{% endfor %}
+  - job_name: bird
+    static_configs:
+{% for n in prom_nodes if n.is_router %}
+      - targets: ["{{ n.mesh_ip }}:{{ exporter_bird_port }}"]
+        labels: {instance: "{{ n.name }}", site: "{{ n.site or '' }}", role: "{{ n.role }}"}
+{% endfor %}

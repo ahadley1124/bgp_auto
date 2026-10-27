@@ -1,0 +1,96 @@
+# {{ ansible_managed }}
+# Shared policy functions. Each returns true when the route should be REJECTED
+# unless the name says otherwise.
+
+function is_bogon_prefix() -> bool {
+    case net.type {
+        NET_IP4: return net ~ BOGON_V4;
+        NET_IP6: return net ~ BOGON_V6 || !(net ~ [2000::/3+]);
+        else: return true;
+    }
+}
+
+function bad_prefix_len() -> bool {
+    case net.type {
+        NET_IP4: return net.len < 8 || net.len > 24;
+        NET_IP6: return net.len < 16 || net.len > 48;
+        else: return true;
+    }
+}
+
+function is_own_space() -> bool {
+    case net.type {
+        NET_IP4: return net ~ OWN_COVER_V4;
+        NET_IP6: return net ~ OWN_COVER_V6;
+        else: return false;
+    }
+}
+
+function is_own_announcement() -> bool {
+    case net.type {
+        NET_IP4: return net ~ OWN_V4;
+        NET_IP6: return net ~ OWN_V6;
+        else: return false;
+    }
+}
+
+function bad_as_path(bool allow_private) -> bool {
+    if bgp_path.len > 100 then return true;
+    for int asn in bgp_path do {
+        if asn ~ BOGON_ASNS then return true;
+        if !allow_private && asn ~ PRIVATE_ASNS then return true;
+    }
+    return false;
+}
+
+function path_has_tier1() -> bool {
+    for int asn in bgp_path do {
+        if asn ~ TIER1_ASNS then return true;
+    }
+    return false;
+}
+{% if node.rtr_servers %}
+
+function rpki_invalid() -> bool {
+    case net.type {
+        NET_IP4: return roa_check(roa_v4, net, bgp_path.last_nonaggregated) = ROA_INVALID;
+        NET_IP6: return roa_check(roa_v6, net, bgp_path.last_nonaggregated) = ROA_INVALID;
+        else: return false;
+    }
+}
+
+function rpki_valid() -> bool {
+    case net.type {
+        NET_IP4: return roa_check(roa_v4, net, bgp_path.last_nonaggregated) = ROA_VALID;
+        NET_IP6: return roa_check(roa_v6, net, bgp_path.last_nonaggregated) = ROA_VALID;
+        else: return false;
+    }
+}
+{% else %}
+
+# No RTR cache configured on this router: validation is off.
+function rpki_invalid() -> bool { return false; }
+function rpki_valid() -> bool { return false; }
+{% endif %}
+
+# Only routes we put in the table ourselves leave the router, never learned ones.
+function export_ok() -> bool {
+    if !is_own_announcement() then return false;
+    if !(LC_LOCAL_ORIGIN ~ bgp_large_community) then return false;
+    if (OWN_AS, 666) ~ bgp_community then return false;
+    return true;
+}
+
+filter kernel_export4 {
+    if bgp_large_community ~ [LC_NEIGHBOR_ROUTE] then reject;
+    if net ~ [169.254.0.0/16+, 100.64.0.0/10+] then reject;
+    if source = RTS_DEVICE then reject;
+    accept;
+}
+
+filter kernel_export6 {
+    if bgp_large_community ~ [LC_NEIGHBOR_ROUTE] then reject;
+    if net ~ [fe80::/10+] then reject;
+    if source = RTS_DEVICE then reject;
+    accept;
+}

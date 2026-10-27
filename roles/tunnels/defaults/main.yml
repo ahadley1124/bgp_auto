@@ -1,0 +1,5 @@
+---
+bgp_auto_dir: /etc/bgp-auto
+# Overrides for filter_plugins TUNNEL_DEFAULTS: pool, mtu, encap (fou|gre), fou_port, ttl.
+# Set encap: gre to test raw GRE (IP protocol 47) over the mesh instead of GRE-in-UDP.
+bgp_tunnel: {}

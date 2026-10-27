@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+protocol bfd {
+    interface "{{ gre_ifname_prefix }}*" {
+        min rx interval {{ node.policy.bfd_interval_ms }} ms;
+        min tx interval {{ node.policy.bfd_interval_ms }} ms;
+        multiplier {{ node.policy.bfd_multiplier }};
+    };
+    multihop {
+        interval {{ node.policy.bfd_interval_ms }} ms;
+        multiplier {{ node.policy.bfd_multiplier }};
+    };
+}

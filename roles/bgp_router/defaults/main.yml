@@ -1,0 +1,34 @@
+---
+bird_bin: bird
+birdc_bin: birdc
+bird_service: bird
+bird_conf_dir: /etc/bird
+bird_staging_dir: /var/lib/bgp-auto/staging
+bird_backup_dir: /var/backups/bgp-auto
+bird_backup_keep: 10
+bgp_auto_dir: /etc/bgp-auto
+bgp_health_bin: /usr/local/sbin/bgp-auto-health
+
+# Install BIRD if the binary is missing. bird3 is in Debian 13; other distros need the CZ.NIC repo.
+bird_install: true
+bird_package: bird3
+
+# configure timeout: BIRD undoes the new config by itself unless it is confirmed in time.
+# The health wait must stay well below it.
+bird_confirm_timeout: 180
+bird_health_wait: 120
+# Session classes that must be Established for a deploy to count as healthy.
+# Transit always gates. Add ix-rs / ix-bilateral to make IX sessions gate as well.
+bgp_health_classes: [transit]
+
+bird_tier1_asns: [174, 209, 701, 1239, 1299, 2914, 3257, 3320, 3356, 3491, 5511, 6453, 6461, 6762, 6830, 7018, 12956]
+gre_ifname_prefix: "gre-"
+
+# RPKI validator on transit routers (Routinator). IX routers use their hub's validator.
+bgp_manage_rpki: true
+rpki_routinator_repo_key: https://packages.nlnetlabs.nl/aptkey.asc
+rpki_routinator_repo: "deb [signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.asc] https://packages.nlnetlabs.nl/linux/{{ ansible_distribution | lower }}/ {{ ansible_distribution_release }} main"
+rpki_user: routinator
+
+# Only render and validate; do not touch the live config (used by playbooks/validate.yml).
+bgp_validate_only: false

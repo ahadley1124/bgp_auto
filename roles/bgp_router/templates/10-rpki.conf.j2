@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+# RPKI route origin validation. If no RTR cache is reachable every route is
+# "unknown" and is accepted (fail open), so a validator outage never blackholes us.
+roa4 table roa_v4;
+roa6 table roa_v6;
+{% for srv in node.rtr_servers %}
+
+protocol rpki rtr{{ loop.index }} {
+    description "RTR cache {{ srv.host }}:{{ srv.port }}";
+    roa4 { table roa_v4; };
+    roa6 { table roa_v6; };
+    remote {{ srv.host }} port {{ srv.port }};
+    retry keep 90;
+    refresh keep 900;
+    expire keep 172800;
+}
+{% endfor %}

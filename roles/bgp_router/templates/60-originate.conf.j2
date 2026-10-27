@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+# This router originates our prefixes. Blackhole routes are the usual aggregate
+# trick: more specific routes (connected, OSPF, customers) always win in the kernel.
+{% if node.own_v4 %}
+
+protocol static originate4 {
+    description "Own IPv4 prefixes from NetBox";
+    ipv4 {
+        import filter { bgp_large_community.add(LC_LOCAL_ORIGIN); accept; };
+    };
+{% for e in node.own_v4 %}
+    route {{ e.prefix }} blackhole;
+{% endfor %}
+}
+{% endif %}
+{% if node.own_v6 %}
+
+protocol static originate6 {
+    description "Own IPv6 prefixes from NetBox";
+    ipv6 {
+        import filter { bgp_large_community.add(LC_LOCAL_ORIGIN); accept; };
+    };
+{% for e in node.own_v6 %}
+    route {{ e.prefix }} blackhole;
+{% endfor %}
+}
+{% endif %}

@@ -1,0 +1,77 @@
+---
+# GRE tunnels between routers over their Cloudflare Mesh addresses, plus loopback addresses.
+# Desired state comes from the model; the reconciler only touches what differs, so a normal
+# run does not flap OSPF or BGP.
+- name: Plan this router's tunnels
+  ansible.builtin.set_fact:
+    tunnel_plan: "{{ hostvars['localhost'].bgp_model_data | bgp_tunnel_plan(inventory_hostname, bgp_tunnel) }}"
+  no_log: true
+
+- name: Stop if the tunnel plan is incomplete
+  ansible.builtin.fail:
+    msg: "{{ tunnel_plan.errors }}"
+  when: tunnel_plan.errors | length > 0
+
+- name: Directories
+  ansible.builtin.file:
+    path: "{{ bgp_auto_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Forwarding and loose reverse-path filtering (traffic may return over another tunnel)
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-bgp-auto.conf
+    mode: "0644"
+    content: |
+      # {{ ansible_managed }}
+      net.ipv4.ip_forward = 1
+      net.ipv6.conf.all.forwarding = 1
+      net.ipv4.conf.all.rp_filter = 2
+      net.ipv4.conf.default.rp_filter = 2
+  notify: reload sysctl
+
+- name: Tunnel reconciler
+  ansible.builtin.copy:
+    src: bgp-auto-tunnels
+    dest: /usr/local/sbin/bgp-auto-tunnels
+    mode: "0755"
+
+- name: Desired tunnel state
+  ansible.builtin.copy:
+    dest: "{{ bgp_auto_dir }}/tunnels.json"
+    mode: "0640"
+    content: "{{ {'fou_port': tunnel_plan.fou_port, 'loopbacks': tunnel_plan.loopbacks, 'tunnels': tunnel_plan.tunnels} | to_nice_json }}"
+
+- name: systemd unit that recreates the tunnels at boot
+  ansible.builtin.template:
+    src: bgp-auto-tunnels.service.j2
+    dest: /etc/systemd/system/bgp-auto-tunnels.service
+    mode: "0644"
+  notify: reload systemd
+
+- name: Start BIRD only after the tunnels exist
+  ansible.builtin.file:
+    path: /etc/systemd/system/bird.service.d
+    state: directory
+    mode: "0755"
+
+- name: BIRD ordering drop-in
+  ansible.builtin.template:
+    src: bird-after-tunnels.conf.j2
+    dest: /etc/systemd/system/bird.service.d/bgp-auto.conf
+    mode: "0644"
+  notify: reload systemd
+
+- name: Apply systemd changes now
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the tunnel unit
+  ansible.builtin.systemd:
+    name: bgp-auto-tunnels.service
+    enabled: true
+
+- name: Reconcile tunnels now
+  ansible.builtin.command:
+    argv: [/usr/local/sbin/bgp-auto-tunnels, apply, --wait, "60"]
+  register: tunnels_result
+  changed_when: "'UNCHANGED' not in tunnels_result.stdout"

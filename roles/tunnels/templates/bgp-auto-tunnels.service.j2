@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[Unit]
+Description=bgp_auto GRE tunnels and loopback addresses
+After=network-online.target warp-svc.service
+Wants=network-online.target warp-svc.service
+Before=bird.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/bgp-auto-tunnels apply --wait 120
+
+[Install]
+WantedBy=multi-user.target

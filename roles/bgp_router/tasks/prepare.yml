@@ -1,0 +1,16 @@
+---
+- name: Directories for bgp-auto state
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ bgp_auto_dir }}"
+    - /var/lib/bgp-auto
+    - "{{ bird_backup_dir }}"
+
+- name: Install the health check
+  ansible.builtin.copy:
+    src: bgp-auto-health
+    dest: "{{ bgp_health_bin }}"
+    mode: "0755"

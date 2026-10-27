@@ -1,0 +1,5 @@
+---
+- name: restart routinator
+  ansible.builtin.systemd:
+    name: routinator
+    state: restarted

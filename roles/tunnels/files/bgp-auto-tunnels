@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""Reconcile GRE tunnels and loopback addresses with /etc/bgp-auto/tunnels.json.
+
+Managed by Ansible (bgp_auto). Safe to run repeatedly: a tunnel is only touched
+when its parameters differ from the desired state, so BGP/OSPF sessions are not
+flapped by a routine playbook run. Runs at boot via bgp-auto-tunnels.service.
+
+  bgp-auto-tunnels apply [--dry-run] [--wait SECONDS] [--config FILE]
+  bgp-auto-tunnels status
+
+Tunnel encapsulation "fou" carries GRE inside UDP (Cloudflare Mesh only forwards
+TCP/UDP/ICMP). "gre" is plain GRE (IP protocol 47) for underlays that allow it.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+
+CONFIG = "/etc/bgp-auto/tunnels.json"
+STATE = "/var/lib/bgp-auto/tunnels.managed"
+
+
+def run(cmd, check=False):
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if check and p.returncode != 0:
+        raise RuntimeError("%s failed: %s" % (" ".join(cmd), p.stderr.strip()))
+    return p.returncode, p.stdout
+
+
+class Reconciler:
+    def __init__(self, cfg, dry=False, runner=run, log=print):
+        self.cfg = cfg
+        self.dry = dry
+        self.run = runner
+        self.log = log
+        self.changed = False
+
+    def do(self, cmd, why):
+        self.changed = True
+        self.log("%s%s   # %s" % ("DRY-RUN " if self.dry else "", " ".join(cmd), why))
+        if not self.dry:
+            self.run(cmd, check=True)
+
+    # ---- helpers
+    def addrs(self, dev):
+        rc, out = self.run(["ip", "-j", "addr", "show", "dev", dev])
+        if rc != 0:
+            return None
+        have = set()
+        for ifc in json.loads(out or "[]"):
+            for a in ifc.get("addr_info", []):
+                have.add("%s/%s" % (a["local"], a["prefixlen"]))
+        return have
+
+    def local_addresses(self):
+        rc, out = self.run(["ip", "-j", "addr", "show"])
+        have = set()
+        if rc == 0:
+            for ifc in json.loads(out or "[]"):
+                for a in ifc.get("addr_info", []):
+                    have.add(a["local"])
+        return have
+
+    def link(self, name):
+        rc, out = self.run(["ip", "-j", "-d", "link", "show", "dev", name])
+        if rc != 0:
+            return None
+        data = json.loads(out or "[]")
+        return data[0] if data else None
+
+    # ---- steps
+    def modules(self):
+        mods = ["ip_gre"]
+        if any(t.get("encap") == "fou" for t in self.cfg["tunnels"]):
+            mods.append("fou")
+        for m in mods:
+            if not self.dry:
+                self.run(["modprobe", m])
+
+    def loopbacks(self):
+        have = self.addrs("lo") or set()
+        for a in self.cfg.get("loopbacks", []):
+            if a not in have:
+                self.do(["ip", "addr", "add", a, "dev", "lo"], "loopback")
+
+    def fou(self):
+        if not any(t.get("encap") == "fou" for t in self.cfg["tunnels"]):
+            return
+        port = str(self.cfg.get("fou_port", 5555))
+        rc, out = self.run(["ip", "fou", "show"])
+        if not any(("port %s " % port) in (l + " ") and "ipproto 47" in l for l in out.splitlines()):
+            self.do(["ip", "fou", "add", "port", port, "ipproto", "47"], "receive GRE-in-UDP")
+
+    def wait_local(self, seconds):
+        need = {t["local"] for t in self.cfg["tunnels"]}
+        deadline = time.time() + seconds
+        while need - self.local_addresses():
+            if time.time() > deadline:
+                missing = sorted(need - self.local_addresses())
+                raise SystemExit("local tunnel endpoint(s) not present on this host yet: %s" % ", ".join(missing))
+            time.sleep(2)
+
+    def matches(self, cur, t):
+        info = ((cur.get("linkinfo") or {}).get("info_data")) or {}
+        if (cur.get("linkinfo") or {}).get("info_kind") != "gre":
+            return False
+        if info.get("local") != t["local"] or info.get("remote") != t["remote"]:
+            return False
+        if int(info.get("ttl", 0)) != int(t.get("ttl", 255)):
+            return False
+        want_fou = t.get("encap") == "fou"
+        if (info.get("encap_type", "none") == "fou") != want_fou:
+            return False
+        if want_fou and int(info.get("encap_dport", 0)) != int(t.get("encap_port", self.cfg.get("fou_port", 5555))):
+            return False
+        return True
+
+    def tunnel(self, t):
+        name = t["name"]
+        cur = self.link(name)
+        if cur is not None and not self.matches(cur, t):
+            self.do(["ip", "link", "del", name], "parameters changed")
+            cur = None
+        if cur is None:
+            cmd = ["ip", "link", "add", name, "type", "gre", "local", t["local"], "remote", t["remote"],
+                   "ttl", str(t.get("ttl", 255))]
+            if t.get("encap") == "fou":
+                cmd += ["encap", "fou", "encap-sport", "auto",
+                        "encap-dport", str(t.get("encap_port", self.cfg.get("fou_port", 5555)))]
+            self.do(cmd, "create tunnel")
+            cur = {"mtu": None, "flags": []}
+        if cur.get("mtu") != int(t["mtu"]):
+            self.do(["ip", "link", "set", name, "mtu", str(t["mtu"])], "mtu")
+        if "UP" not in (cur.get("flags") or []) and "LOWER_UP" not in (cur.get("flags") or []):
+            self.do(["ip", "link", "set", name, "up"], "bring up")
+        have = self.addrs(name) or set()
+        for a in t.get("addresses", []):
+            if a not in have:
+                self.do(["ip", "addr", "add", a, "dev", name], "tunnel address")
+        # loose reverse path filtering: routed traffic may arrive on a different tunnel than it leaves
+        path = "/proc/sys/net/ipv4/conf/%s/rp_filter" % name
+        if not self.dry and os.path.exists(path):
+            try:
+                with open(path, "w") as f:
+                    f.write("2")
+            except OSError:
+                pass
+
+    def stale(self):
+        try:
+            with open(STATE) as f:
+                prev = set(json.load(f))
+        except (OSError, ValueError):
+            prev = set()
+        want = {t["name"] for t in self.cfg["tunnels"]}
+        for name in sorted(prev - want):
+            if self.link(name) is not None:
+                self.do(["ip", "link", "del", name], "no longer in NetBox")
+        if not self.dry:
+            os.makedirs(os.path.dirname(STATE), exist_ok=True)
+            with open(STATE, "w") as f:
+                json.dump(sorted(want), f)
+
+    def apply(self, wait=0):
+        self.modules()
+        self.loopbacks()
+        self.fou()
+        if wait:
+            self.wait_local(wait)
+        for t in self.cfg["tunnels"]:
+            self.tunnel(t)
+        self.stale()
+        self.log("CHANGED" if self.changed else "UNCHANGED")
+        return self.changed
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=["apply", "status"])
+    ap.add_argument("--config", default=CONFIG)
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--wait", type=int, default=0, help="seconds to wait for local endpoint addresses")
+    a = ap.parse_args(argv)
+    with open(a.config) as f:
+        cfg = json.load(f)
+    r = Reconciler(cfg, dry=a.dry_run)
+    if a.cmd == "status":
+        for t in cfg["tunnels"]:
+            cur = r.link(t["name"])
+            state = "missing" if cur is None else ("ok" if r.matches(cur, t) else "differs")
+            print("%-16s %-8s %s -> %s" % (t["name"], state, t["local"], t["remote"]))
+        return 0
+    r.apply(wait=a.wait)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
