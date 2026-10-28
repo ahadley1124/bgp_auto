@@ -6,7 +6,7 @@
     mode: "0750"
   loop:
     - "{{ bgp_auto_dir }}"
-    - /var/lib/bgp-auto
+    - "{{ bgp_state_dir }}"
     - "{{ bird_backup_dir }}"
 
 - name: Install the health check

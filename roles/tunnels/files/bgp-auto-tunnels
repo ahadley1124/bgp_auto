@@ -5,7 +5,7 @@ Managed by Ansible (bgp_auto). Safe to run repeatedly: a tunnel is only touched
 when its parameters differ from the desired state, so BGP/OSPF sessions are not
 flapped by a routine playbook run. Runs at boot via bgp-auto-tunnels.service.
 
-  bgp-auto-tunnels apply [--dry-run] [--wait SECONDS] [--config FILE]
+  bgp-auto-tunnels apply [--dry-run] [--wait SECONDS] [--config FILE] [--state FILE]
   bgp-auto-tunnels status
 
 Tunnel encapsulation "fou" carries GRE inside UDP (Cloudflare Mesh only forwards
@@ -30,11 +30,12 @@ def run(cmd, check=False):
 
 
 class Reconciler:
-    def __init__(self, cfg, dry=False, runner=run, log=print):
+    def __init__(self, cfg, dry=False, runner=run, log=print, state=STATE):
         self.cfg = cfg
         self.dry = dry
         self.run = runner
         self.log = log
+        self.state = state
         self.changed = False
 
     def do(self, cmd, why):
@@ -165,7 +166,7 @@ class Reconciler:
 
     def stale(self):
         try:
-            with open(STATE) as f:
+            with open(self.state) as f:
                 prev = set(json.load(f))
         except (OSError, ValueError):
             prev = set()
@@ -174,8 +175,8 @@ class Reconciler:
             if self.link(name) is not None:
                 self.do(["ip", "link", "del", name], "no longer in NetBox")
         if not self.dry:
-            os.makedirs(os.path.dirname(STATE), exist_ok=True)
-            with open(STATE, "w") as f:
+            os.makedirs(os.path.dirname(self.state), exist_ok=True)
+            with open(self.state, "w") as f:
                 json.dump(sorted(want), f)
 
     def apply(self, wait=0):
@@ -196,12 +197,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["apply", "status"])
     ap.add_argument("--config", default=CONFIG)
+    ap.add_argument("--state", default=STATE, help="file recording the tunnels we manage")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--wait", type=int, default=0, help="seconds to wait for local endpoint addresses")
     a = ap.parse_args(argv)
     with open(a.config) as f:
         cfg = json.load(f)
-    r = Reconciler(cfg, dry=a.dry_run)
+    r = Reconciler(cfg, dry=a.dry_run, state=a.state)
     if a.cmd == "status":
         for t in cfg["tunnels"]:
             cur = r.link(t["name"])

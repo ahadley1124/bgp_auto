@@ -3,7 +3,8 @@ bird_bin: bird
 birdc_bin: birdc
 bird_service: bird
 bird_conf_dir: /etc/bird
-bird_staging_dir: /var/lib/bgp-auto/staging
+bgp_state_dir: /var/lib/bgp-auto
+bird_staging_dir: "{{ bgp_state_dir }}/staging"
 bird_backup_dir: /var/backups/bgp-auto
 bird_backup_keep: 10
 bgp_auto_dir: /etc/bgp-auto

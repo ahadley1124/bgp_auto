@@ -50,6 +50,7 @@ class AnsibleFlow(unittest.TestCase):
               "netbox_model_work_dir": self.tdir, "bgp_connection": "local", "ansible_become": False,
               "bgp_mesh": False, "bird_install": False, "bgp_manage_rpki": False,
               "bird_conf_dir": t + "/{{ inventory_hostname }}/etc-bird",
+              "bgp_state_dir": t + "/{{ inventory_hostname }}/state",
               "bird_staging_dir": t + "/{{ inventory_hostname }}/staging",
               "bird_backup_dir": t + "/{{ inventory_hostname }}/backup",
               "bgp_auto_dir": t + "/{{ inventory_hostname }}/bgp-auto",

@@ -51,9 +51,17 @@ class FakeIP:
 CFG = {"fou_port": 5555, "loopbacks": ["10.255.255.1/32"], "tunnels": [
     {"name": "gre-nl", "local": "100.96.0.5", "remote": "100.96.0.9", "encap": "fou", "mtu": 1240, "ttl": 255, "addresses": ["10.255.0.0/31"]}]}
 
-class TunnelTests(unittest.TestCase):
+class ReconcilerCase(unittest.TestCase):
+    """Keeps the managed-tunnel state file out of /var/lib so the tests run unprivileged."""
+    def setUp(self):
+        d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup)
+        self.state = os.path.join(d.name, "tunnels.managed")
+    def reconciler(self, cfg, ip):
+        return tun.Reconciler(cfg, runner=ip, log=lambda *_: None, state=self.state)
+
+class TunnelTests(ReconcilerCase):
     def apply(self, ip, cfg=CFG):
-        r = tun.Reconciler(cfg, runner=ip, log=lambda *_: None); r.apply(); return r.changed
+        r = self.reconciler(cfg, ip); r.apply(); return r.changed
     def test_idempotent(self):
         ip = FakeIP(["100.96.0.5"])
         self.assertTrue(self.apply(ip))
@@ -74,14 +82,14 @@ class TunnelTests(unittest.TestCase):
         self.assertIn("5555", ip.fou); self.assertIn("10.255.255.1/32", ip.addrs["lo"])
         self.assertIn("10.255.0.0/31", ip.addrs["gre-nl"])
 
-class DummyTests(unittest.TestCase):
+class DummyTests(ReconcilerCase):
     def test_mgmt_interface(self):
         ip = FakeIP([])
         cfg = {"tunnels": [], "dummies": [{"name": "mgmt0", "addresses": ["2001:db8:1::1/64"]}]}
-        r = tun.Reconciler(cfg, runner=ip, log=lambda *_: None)
+        r = self.reconciler(cfg, ip)
         self.assertTrue(r.apply())
         self.assertIn("2001:db8:1::1/64", ip.addrs["mgmt0"])
-        r = tun.Reconciler(cfg, runner=ip, log=lambda *_: None)
+        r = self.reconciler(cfg, ip)
         self.assertFalse(r.apply(), "second run changes nothing")
 
 
