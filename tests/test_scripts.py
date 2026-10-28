@@ -28,6 +28,9 @@ class FakeIP:
             return 0, "".join("port %s ipproto 47\n" % p for p in self.fou)
         if cmd[:3] == ["ip", "fou", "add"]:
             self.fou.add(cmd[4]); return 0, ""
+        if cmd[:3] == ["ip", "link", "add"] and cmd[-1] == "dummy":
+            self.links[cmd[3]] = {"mtu": 1500, "flags": [], "linkinfo": {"info_kind": "dummy"}}
+            self.addrs[cmd[3]] = set(); return 0, ""
         if cmd[:3] == ["ip", "link", "add"]:
             kv = dict(zip(cmd[6::2], cmd[7::2]))
             info = {"local": kv["local"], "remote": kv["remote"], "ttl": int(kv["ttl"]), "encap_type": "fou" if "encap" in cmd else "none"}
@@ -70,6 +73,17 @@ class TunnelTests(unittest.TestCase):
         ip = FakeIP(["100.96.0.5"]); self.apply(ip)
         self.assertIn("5555", ip.fou); self.assertIn("10.255.255.1/32", ip.addrs["lo"])
         self.assertIn("10.255.0.0/31", ip.addrs["gre-nl"])
+
+class DummyTests(unittest.TestCase):
+    def test_mgmt_interface(self):
+        ip = FakeIP([])
+        cfg = {"tunnels": [], "dummies": [{"name": "mgmt0", "addresses": ["2001:db8:1::1/64"]}]}
+        r = tun.Reconciler(cfg, runner=ip, log=lambda *_: None)
+        self.assertTrue(r.apply())
+        self.assertIn("2001:db8:1::1/64", ip.addrs["mgmt0"])
+        r = tun.Reconciler(cfg, runner=ip, log=lambda *_: None)
+        self.assertFalse(r.apply(), "second run changes nothing")
+
 
 class HealthTests(unittest.TestCase):
     OUT = """BIRD 3.2.1 ready.

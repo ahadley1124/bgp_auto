@@ -73,6 +73,8 @@ class Reconciler:
     # ---- steps
     def modules(self):
         mods = ["ip_gre"]
+        if self.cfg.get("dummies"):
+            mods.append("dummy")
         if any(t.get("encap") == "fou" for t in self.cfg["tunnels"]):
             mods.append("fou")
         for m in mods:
@@ -84,6 +86,19 @@ class Reconciler:
         for a in self.cfg.get("loopbacks", []):
             if a not in have:
                 self.do(["ip", "addr", "add", a, "dev", "lo"], "loopback")
+
+    def dummies(self):
+        """Dummy interfaces that carry a router's management /64 address."""
+        for d in self.cfg.get("dummies", []):
+            if self.link(d["name"]) is None:
+                self.do(["ip", "link", "add", d["name"], "type", "dummy"], "management interface")
+            cur = self.link(d["name"]) or {"flags": []}
+            if "UP" not in (cur.get("flags") or []) and "LOWER_UP" not in (cur.get("flags") or []):
+                self.do(["ip", "link", "set", d["name"], "up"], "bring up")
+            have = self.addrs(d["name"]) or set()
+            for a in d.get("addresses", []):
+                if a not in have:
+                    self.do(["ip", "addr", "add", a, "dev", d["name"]], "management address")
 
     def fou(self):
         if not any(t.get("encap") == "fou" for t in self.cfg["tunnels"]):
@@ -166,6 +181,7 @@ class Reconciler:
     def apply(self, wait=0):
         self.modules()
         self.loopbacks()
+        self.dummies()
         self.fou()
         if wait:
             self.wait_local(wait)

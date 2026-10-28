@@ -40,7 +40,7 @@
   ansible.builtin.copy:
     dest: "{{ bgp_auto_dir }}/tunnels.json"
     mode: "0640"
-    content: "{{ {'fou_port': tunnel_plan.fou_port, 'loopbacks': tunnel_plan.loopbacks, 'tunnels': tunnel_plan.tunnels} | to_nice_json }}"
+    content: "{{ {'fou_port': tunnel_plan.fou_port, 'loopbacks': tunnel_plan.loopbacks, 'dummies': tunnel_plan.dummies, 'tunnels': tunnel_plan.tunnels} | to_nice_json }}"
 
 - name: systemd unit that recreates the tunnels at boot
   ansible.builtin.template:

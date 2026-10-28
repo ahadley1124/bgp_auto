@@ -20,6 +20,16 @@ AS17290, IPv4 and IPv6. NetBox is the only place you edit; Ansible turns it into
 * Own prefixes are originated only on the primary (static blackhole routes, tagged with the
   local-origin large community) and only that tag is exported to eBGP.
 
+## IPv6 per VM
+
+Give a VM its own /48 in the device custom field `ipv6_block` (must be inside `OWN-V6`, unique, no overlaps;
+the model rejects anything else before a host is touched). The **first /64** of that /48 is its management
+network: the router gets `<that /64>::1` on a dummy interface `mgmt0`, and OSPFv3 announces the /64 so every
+router can reach it. VMs inside the same IX use addresses from that /64: set `mgmt_parent` (the IX router's
+device name) and `mgmt_ipv6` (an address inside the parent's management /64). Only routers get `mgmt0`
+configured by these playbooks; configuring the addresses on the other VMs is not automated yet.
+The rest of the /48 is left for you to use; it is not announced separately (your aggregate covers it).
+
 ## Policy
 
 | What | How |

@@ -1,37 +1,220 @@
 {
   "device_roles": [
-    {"name": "Transit Router", "slug": "transit-router", "color": "2196f3"},
-    {"name": "IX Router", "slug": "ix-router", "color": "4caf50"},
-    {"name": "Monitoring", "slug": "monitoring", "color": "ff9800"}
+    {
+      "name": "Transit Router",
+      "slug": "transit-router",
+      "color": "2196f3"
+    },
+    {
+      "name": "IX Router",
+      "slug": "ix-router",
+      "color": "4caf50"
+    },
+    {
+      "name": "Monitoring",
+      "slug": "monitoring",
+      "color": "ff9800"
+    }
   ],
   "tags": [
-    {"name": "bgp-originate", "slug": "bgp-originate", "color": "9c27b0"}
+    {
+      "name": "bgp-originate",
+      "slug": "bgp-originate",
+      "color": "9c27b0"
+    }
   ],
   "custom_fields": [
-    {"object": "dcim.device", "name": "loopback_ip", "type": "text", "label": "BGP loopback IPv4", "description": "e.g. 10.255.255.1/32. Announced in OSPF, used as iBGP and router id"},
-    {"object": "dcim.device", "name": "loopback_ip6", "type": "text", "label": "BGP loopback IPv6", "description": "e.g. fd17:290::1/128"},
-    {"object": "dcim.device", "name": "bgp_primary", "type": "boolean", "label": "Primary BGP node", "description": "Exactly one device. Deployed first, originates the own prefixes"},
-    {"object": "dcim.device", "name": "hub", "type": "text", "label": "Hub transit router", "description": "IX routers: device name of the transit router they tunnel to"},
-    {"object": "dcim.device", "name": "short_name", "type": "text", "label": "Short name", "description": "Up to 11 characters, used in the gre-<short> interface name"},
-    {"object": "dcim.device", "name": "mesh_ip", "type": "text", "label": "Cloudflare Mesh IP", "description": "Filled in by the cloudflare_mesh role"},
-    {"object": "dcim.device", "name": "rpki_validator", "type": "boolean", "label": "Runs the RPKI validator", "description": "Default: transit routers"},
-    {"object": "dcim.device", "name": "rpki_rtr", "type": "text", "label": "RPKI RTR servers", "description": "Optional override, comma separated host:port"},
-    {"object": "dcim.device", "name": "originate_prefixes", "type": "boolean", "label": "Originate own prefixes", "description": "Default: the primary node only"},
-    {"object": "dcim.device", "name": "ansible_user", "type": "text", "label": "SSH user"},
-    {"object": "netbox_bgp.bgpsession", "name": "session_class", "type": "select", "choices": ["transit", "ix-rs", "ix-bilateral", "customer"], "label": "Session class"},
-    {"object": "netbox_bgp.bgpsession", "name": "bgp_password", "type": "text", "label": "BGP password", "description": "Only if the plugin has no password field"},
-    {"object": "netbox_bgp.bgpsession", "name": "multihop_ttl", "type": "integer", "label": "Multihop TTL"},
-    {"object": "netbox_bgp.bgpsession", "name": "max_prefix", "type": "integer", "label": "Max prefixes", "description": "Overrides the class default"},
-    {"object": "netbox_bgp.bgpsession", "name": "irr_as_set", "type": "text", "label": "IRR as-set", "description": "Default: AS<remote asn>"},
-    {"object": "netbox_bgp.bgpsession", "name": "irr_filter", "type": "boolean", "label": "IRR prefix filter"},
-    {"object": "netbox_bgp.bgpsession", "name": "local_pref", "type": "integer", "label": "Local preference"},
-    {"object": "netbox_bgp.bgpsession", "name": "export_prepend", "type": "integer", "label": "Export prepends"},
-    {"object": "netbox_bgp.bgpsession", "name": "enforce_first_as", "type": "boolean", "label": "Enforce first AS"},
-    {"object": "netbox_bgp.bgpsession", "name": "allow_private_as", "type": "boolean", "label": "Allow private ASNs in paths", "description": "Needed for the Vultr session (AS64515)"},
-    {"object": "netbox_bgp.bgpsession", "name": "accept_default", "type": "boolean", "label": "Accept default route"},
-    {"object": "netbox_bgp.bgpsession", "name": "graceful_shutdown", "type": "boolean", "label": "Send graceful shutdown"},
-    {"object": "netbox_bgp.bgpsession", "name": "bfd", "type": "boolean", "label": "BFD"},
-    {"object": "netbox_bgp.bgpsession", "name": "neighbor_interface", "type": "text", "label": "Neighbor interface", "description": "Adds a static route to the neighbor via this interface (Vultr link-local style neighbors)"},
-    {"object": "netbox_bgp.bgpsession", "name": "import_prefix_list", "type": "text", "label": "Static import prefix list", "description": "Name of a netbox_bgp prefix list that overrides the IRR filter"}
+    {
+      "object": "dcim.device",
+      "name": "loopback_ip",
+      "type": "text",
+      "label": "BGP loopback IPv4",
+      "description": "e.g. 10.255.255.1/32. Announced in OSPF, used as iBGP and router id"
+    },
+    {
+      "object": "dcim.device",
+      "name": "loopback_ip6",
+      "type": "text",
+      "label": "BGP loopback IPv6",
+      "description": "e.g. fd17:290::1/128"
+    },
+    {
+      "object": "dcim.device",
+      "name": "bgp_primary",
+      "type": "boolean",
+      "label": "Primary BGP node",
+      "description": "Exactly one device. Deployed first, originates the own prefixes"
+    },
+    {
+      "object": "dcim.device",
+      "name": "hub",
+      "type": "text",
+      "label": "Hub transit router",
+      "description": "IX routers: device name of the transit router they tunnel to"
+    },
+    {
+      "object": "dcim.device",
+      "name": "short_name",
+      "type": "text",
+      "label": "Short name",
+      "description": "Up to 11 characters, used in the gre-<short> interface name"
+    },
+    {
+      "object": "dcim.device",
+      "name": "mesh_ip",
+      "type": "text",
+      "label": "Cloudflare Mesh IP",
+      "description": "Filled in by the cloudflare_mesh role"
+    },
+    {
+      "object": "dcim.device",
+      "name": "rpki_validator",
+      "type": "boolean",
+      "label": "Runs the RPKI validator",
+      "description": "Default: transit routers"
+    },
+    {
+      "object": "dcim.device",
+      "name": "rpki_rtr",
+      "type": "text",
+      "label": "RPKI RTR servers",
+      "description": "Optional override, comma separated host:port"
+    },
+    {
+      "object": "dcim.device",
+      "name": "originate_prefixes",
+      "type": "boolean",
+      "label": "Originate own prefixes",
+      "description": "Default: the primary node only"
+    },
+    {
+      "object": "dcim.device",
+      "name": "ipv6_block",
+      "type": "text",
+      "label": "IPv6 /48",
+      "description": "Unique /48 for this VM, inside OWN-V6, e.g. 2001:db8:1234::/48. Its first /64 is the management network"
+    },
+    {
+      "object": "dcim.device",
+      "name": "mgmt_parent",
+      "type": "text",
+      "label": "Management parent",
+      "description": "For a VM inside an IX: device name of the IX router whose management /64 it uses"
+    },
+    {
+      "object": "dcim.device",
+      "name": "mgmt_ipv6",
+      "type": "text",
+      "label": "Management IPv6",
+      "description": "Address inside the parent's management /64 (required with mgmt_parent)"
+    },
+    {
+      "object": "dcim.device",
+      "name": "ansible_user",
+      "type": "text",
+      "label": "SSH user"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "session_class",
+      "type": "select",
+      "choices": [
+        "transit",
+        "ix-rs",
+        "ix-bilateral",
+        "customer"
+      ],
+      "label": "Session class"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "bgp_password",
+      "type": "text",
+      "label": "BGP password",
+      "description": "Only if the plugin has no password field"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "multihop_ttl",
+      "type": "integer",
+      "label": "Multihop TTL"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "max_prefix",
+      "type": "integer",
+      "label": "Max prefixes",
+      "description": "Overrides the class default"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "irr_as_set",
+      "type": "text",
+      "label": "IRR as-set",
+      "description": "Default: AS<remote asn>"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "irr_filter",
+      "type": "boolean",
+      "label": "IRR prefix filter"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "local_pref",
+      "type": "integer",
+      "label": "Local preference"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "export_prepend",
+      "type": "integer",
+      "label": "Export prepends"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "enforce_first_as",
+      "type": "boolean",
+      "label": "Enforce first AS"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "allow_private_as",
+      "type": "boolean",
+      "label": "Allow private ASNs in paths",
+      "description": "Needed for the Vultr session (AS64515)"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "accept_default",
+      "type": "boolean",
+      "label": "Accept default route"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "graceful_shutdown",
+      "type": "boolean",
+      "label": "Send graceful shutdown"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "bfd",
+      "type": "boolean",
+      "label": "BFD"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "neighbor_interface",
+      "type": "text",
+      "label": "Neighbor interface",
+      "description": "Adds a static route to the neighbor via this interface (Vultr link-local style neighbors)"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "import_prefix_list",
+      "type": "text",
+      "label": "Static import prefix list",
+      "description": "Name of a netbox_bgp prefix list that overrides the IRR filter"
+    }
   ]
 }

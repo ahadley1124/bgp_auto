@@ -129,3 +129,51 @@ class TunnelPlanTests(unittest.TestCase):
     def test_missing_mesh_ip_reported(self):
         self.model["nodes"]["nl-transit"]["mesh_ip"] = None
         self.assertTrue(b.tunnel_plan(self.model, "vultr-transit")["errors"])
+
+
+class V6BlockTests(unittest.TestCase):
+    def raw(self):
+        raw = json.load(open(os.path.join(os.path.dirname(__file__), "fixtures", "netbox.json")))
+        return raw
+
+    def setCF(self, raw, name, **cf):
+        for d in raw["devices"]:
+            if d["name"] == name:
+                d["custom_fields"].update(cf)
+
+    def test_blocks_and_management_net(self):
+        raw = self.raw()
+        self.setCF(raw, "vultr-ix1", ipv6_block="2001:db8:5001::/48")
+        self.setCF(raw, "mon-vultr", mgmt_parent="vultr-ix1", mgmt_ipv6="2001:db8:5001::10")
+        m = b.build_model(raw, {})
+        self.assertEqual(m["errors"], [])
+        ix = m["nodes"]["vultr-ix1"]
+        self.assertEqual(ix["mgmt_net"], "2001:db8:5001::/64")
+        self.assertEqual(ix["mgmt_addr"], "2001:db8:5001::1/64")
+        self.assertEqual(m["nodes"]["mon-vultr"]["mgmt_addr"], "2001:db8:5001::10/64")
+        self.assertEqual(ix["mgmt_members"], [{"name": "mon-vultr", "addr": "2001:db8:5001::10"}])
+
+    def test_rejects_bad_blocks(self):
+        raw = self.raw()
+        self.setCF(raw, "vultr-ix1", ipv6_block="2001:db8:5001::/64")       # not a /48
+        self.setCF(raw, "nl-ix1", ipv6_block="2001:db8:ffff::/48")              # outside OWN-V6
+        self.setCF(raw, "vultr-transit", ipv6_block="2001:db8:5002::/48")
+        self.setCF(raw, "nl-transit", ipv6_block="2001:db8:5002::/48")      # duplicate
+        errs = " | ".join(b.build_model(raw, {})["errors"])
+        self.assertIn("must be an IPv6 /48", errs)
+        self.assertIn("not inside the own IPv6 prefixes", errs)
+        self.assertIn("overlapping", errs)
+
+    def test_child_must_be_inside_parent_net(self):
+        raw = self.raw()
+        self.setCF(raw, "vultr-ix1", ipv6_block="2001:db8:5001::/48")
+        self.setCF(raw, "mon-vultr", mgmt_parent="vultr-ix1", mgmt_ipv6="2001:db8:5001:1::10")
+        self.assertIn("not inside", " ".join(b.build_model(raw, {})["errors"]))
+
+    def test_tunnel_plan_has_management_interface(self):
+        raw = self.raw()
+        for i, d in enumerate(raw["devices"]):
+            d["custom_fields"]["mesh_ip"] = "100.96.0.%d/32" % (10 + i)
+        self.setCF(raw, "vultr-ix1", ipv6_block="2001:db8:5001::/48")
+        plan = b.tunnel_plan(b.build_model(raw, {}), "vultr-ix1")
+        self.assertEqual(plan["dummies"], [{"name": "mgmt0", "addresses": ["2001:db8:5001::1/64"]}])

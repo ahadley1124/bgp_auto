@@ -244,6 +244,9 @@ def _device_view(d, cfg, errors):
         "rpki_validator": cf.get("rpki_validator"),
         "originate": cf.get("originate_prefixes"),
         "ansible_user": cf.get("ansible_user"),
+        "v6_block_raw": (cf.get("ipv6_block") or "").strip() or None,
+        "mgmt_parent": (cf.get("mgmt_parent") or "").strip() or None,
+        "mgmt_ipv6_raw": _strip(cf.get("mgmt_ipv6")),
     }
 
 
@@ -370,6 +373,78 @@ def _peers(devs, errors):
     return peers
 
 
+def _plan_v6_blocks(devs, own6, errors):
+    """Give each device its /48 and the management /64 (the first /64 of that /48).
+
+    A router's management address is <first /64>::1. Other VMs that sit in the same IX take an
+    address from their parent's management /64: set mgmt_parent (device name) and mgmt_ipv6.
+    Fills v6_block, mgmt_net, mgmt_addr, mgmt_members on every device dict.
+    """
+    own_nets = []
+    for e in own6:
+        try:
+            own_nets.append(ipaddress.ip_network(e["prefix"], strict=False))
+        except ValueError:
+            pass
+    blocks = {}
+    for n, d in devs.items():
+        d.update({"v6_block": None, "mgmt_net": None, "mgmt_addr": None, "mgmt_members": []})
+        raw = d["v6_block_raw"]
+        if not raw:
+            continue
+        try:
+            net = ipaddress.ip_network(raw, strict=True)
+        except ValueError:
+            errors.append("%s: ipv6_block %r is not a valid IPv6 prefix with host bits clear" % (n, raw))
+            continue
+        if net.version != 6 or net.prefixlen != 48:
+            errors.append("%s: ipv6_block %s must be an IPv6 /48" % (n, raw))
+            continue
+        if own_nets and not any(net.subnet_of(o) for o in own_nets if o.version == 6):
+            errors.append("%s: ipv6_block %s is not inside the own IPv6 prefixes (OWN-V6)" % (n, net))
+            continue
+        for other, onet in blocks.items():
+            if net.overlaps(onet):
+                errors.append("%s and %s have overlapping ipv6_block (%s, %s)" % (n, other, net, onet))
+        blocks[n] = net
+        mgmt = ipaddress.ip_network("%s/64" % net.network_address)
+        d["v6_block"] = str(net)
+        d["mgmt_net"] = str(mgmt)
+        d["mgmt_addr"] = "%s/64" % (mgmt.network_address + 1)
+    used = {}
+    for n, d in devs.items():
+        parent = d["mgmt_parent"]
+        if not parent:
+            continue
+        pd = devs.get(parent)
+        if pd is None or not pd["mgmt_net"]:
+            errors.append("%s: mgmt_parent %r is not a device with a valid ipv6_block" % (n, parent))
+            continue
+        raw = d["mgmt_ipv6_raw"]
+        if not raw:
+            errors.append("%s: mgmt_ipv6 is required when mgmt_parent is set" % n)
+            continue
+        try:
+            addr = ipaddress.ip_address(raw)
+        except ValueError:
+            errors.append("%s: mgmt_ipv6 %r is not an IPv6 address" % (n, raw))
+            continue
+        mnet = ipaddress.ip_network(pd["mgmt_net"])
+        if addr.version != 6 or addr not in mnet:
+            errors.append("%s: mgmt_ipv6 %s is not inside %s's management network %s" % (n, raw, parent, mnet))
+            continue
+        if addr == mnet.network_address or str(addr) == str(ipaddress.ip_interface(pd["mgmt_addr"]).ip):
+            errors.append("%s: mgmt_ipv6 %s is the network or %s's own address" % (n, raw, parent))
+            continue
+        if addr in used:
+            errors.append("%s and %s both use mgmt_ipv6 %s" % (n, used[addr], raw))
+            continue
+        used[addr] = n
+        d["mgmt_addr"] = "%s/64" % addr
+        d["mgmt_net"] = pd["mgmt_net"]
+        pd["mgmt_members"].append({"name": n, "addr": str(addr)})
+
+
 def build_model(raw, cfg=None):
     cfg = _merge(DEFAULT_POLICY, cfg or {})
     errors = []
@@ -405,6 +480,7 @@ def build_model(raw, cfg=None):
     lists = _collect_prefix_lists(raw, errors)
     own = _own_prefixes(raw, cfg, lists, errors)
     peers = _peers(devs, errors)
+    _plan_v6_blocks(devs, own["6"], errors)
 
     sessions = {}
     for s in raw.get("sessions") or []:
@@ -600,7 +676,10 @@ def tunnel_plan(model, name, cfg=None):
         loops.append(node["loopback4"] + "/32")
     if node.get("loopback6"):
         loops.append(node["loopback6"] + "/128")
-    return {"errors": errors, "tunnels": tunnels, "loopbacks": loops, "fou_port": t["fou_port"]}
+    dummies = []
+    if node.get("mgmt_addr") and node["is_router"]:
+        dummies.append({"name": t.get("mgmt_ifname", "mgmt0"), "addresses": [node["mgmt_addr"]]})
+    return {"errors": errors, "tunnels": tunnels, "loopbacks": loops, "dummies": dummies, "fou_port": t["fou_port"]}
 
 
 class FilterModule(object):

@@ -17,16 +17,21 @@ protocol ospf v2 ospf4 {
         };
     };
 }
-{% if node.loopback6 %}
+{% if node.loopback6 or node.mgmt_net %}
 
 protocol ospf v3 ospf6 {
-    description "Underlay: IPv6 loopbacks";
+    description "Underlay: IPv6 loopback and management network";
     ipv6 {
         import all;
         export none;
     };
     area 0 {
+{% if node.loopback6 %}
         stubnet {{ node.loopback6 }}/128 { hidden no; summary no; cost 1; };
+{% endif %}
+{% if node.mgmt_net %}
+        stubnet {{ node.mgmt_net }} { hidden no; summary no; cost 1; };
+{% endif %}
         interface "{{ gre_ifname_prefix }}*" {
             type ptp;
             cost {{ node.policy.ospf_cost }};
