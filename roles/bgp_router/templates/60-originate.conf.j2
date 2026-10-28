@@ -1,0 +1,55 @@
+# {{ ansible_managed }}
+# This router originates our prefixes. Blackhole routes are the usual aggregate
+# trick: more specific routes (connected, OSPF, customers) always win in the kernel.
+{% if node.originate and node.own_v4 %}
+
+protocol static originate4 {
+    description "Own IPv4 prefixes from NetBox";
+    ipv4 {
+        import filter { bgp_large_community.add(LC_LOCAL_ORIGIN); accept; };
+    };
+{% for e in node.own_v4 %}
+    route {{ e.prefix }} blackhole;
+{% endfor %}
+}
+{% endif %}
+{% if node.originate and node.own_v6 %}
+
+protocol static originate6 {
+    description "Own IPv6 prefixes from NetBox";
+    ipv6 {
+        import filter { bgp_large_community.add(LC_LOCAL_ORIGIN); accept; };
+    };
+{% for e in node.own_v6 %}
+    route {{ e.prefix }} blackhole;
+{% endfor %}
+}
+{% endif %}
+{% if node.originate_block %}
+
+protocol static originate_block6 {
+    description "This router's own /48 ({{ node.name }}), announced to its IX peers and the transits";
+    ipv6 {
+        import filter { bgp_large_community.add(LC_LOCAL_ORIGIN); accept; };
+    };
+    # The management /64 and any other /64 you put on a local interface are more specific
+    # and win in the kernel; the rest of the /48 is dropped here until it is routed.
+    route {{ node.originate_block }} blackhole;
+}
+{% endif %}
+{% if node.originate_anycast %}
+{% for fam, entries in [(4, node.anycast_all_v4), (6, node.anycast_all_v6)] if entries %}
+
+protocol static originate_anycast{{ fam }} {
+    description "Anycast prefixes from NetBox (tag bgp-anycast)";
+    ipv{{ fam }} {
+        import filter { bgp_large_community.add(LC_LOCAL_ORIGIN); accept; };
+    };
+    # Service addresses learned from the VMs that serve this anycast prefix are more specific
+    # and win; the rest of the prefix is dropped here.
+{% for e in entries %}
+    route {{ e.prefix }} blackhole;
+{% endfor %}
+}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# IRR-derived prefix sets (bgpq4) for bilateral peers, and static lists from NetBox.
+{{ irr_text }}
+{% for name, entries in node.static_lists.items() %}
+{% if entries %}
+define STATIC_{{ name | bgp_bird_name }} = [ {{ entries | bgp_prefix_set }} ];
+{% endif %}
+{% endfor %}

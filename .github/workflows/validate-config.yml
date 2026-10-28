@@ -40,3 +40,5 @@ jobs:
 
       - name: Validate playbook syntax
         run: ansible-playbook --syntax-check -i localhost, playbooks/deploy.yml
+      - name: Validate playbook syntax (validate.yml)
+        run: ansible-playbook --syntax-check -i localhost, playbooks/validate.yml

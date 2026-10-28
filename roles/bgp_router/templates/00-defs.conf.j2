@@ -1,0 +1,44 @@
+# {{ ansible_managed }}
+# Constants, communities and bogon lists.
+define OWN_AS = {{ node.policy.own_asn }};
+
+# Large communities we attach (17290:function:value). Only we may set these.
+#   1000:n  where the route was learned    2000:n  device id it entered at
+#   1100:n  RPKI state (1 valid, 2 unknown) 9000:1  internal neighbor route
+define LC_FROM_TRANSIT      = (OWN_AS, 1000, 1);
+define LC_FROM_IX_RS        = (OWN_AS, 1000, 2);
+define LC_FROM_IX_BILATERAL = (OWN_AS, 1000, 3);
+define LC_FROM_CUSTOMER     = (OWN_AS, 1000, 4);
+define LC_LOCAL_ORIGIN      = (OWN_AS, 1000, 5);
+define LC_LEARNED_AT        = (OWN_AS, 2000, {{ node.id }});
+define LC_RPKI_VALID        = (OWN_AS, 1100, 1);
+define LC_RPKI_UNKNOWN      = (OWN_AS, 1100, 2);
+define LC_NEIGHBOR_ROUTE    = (OWN_AS, 9000, 1);
+
+define BOGON_V4 = [
+    0.0.0.0/8+, 10.0.0.0/8+, 100.64.0.0/10+, 127.0.0.0/8+, 169.254.0.0/16+,
+    172.16.0.0/12+, 192.0.0.0/24+, 192.0.2.0/24+, 192.168.0.0/16+, 198.18.0.0/15+,
+    198.51.100.0/24+, 203.0.113.0/24+, 224.0.0.0/3+
+];
+define BOGON_V6 = [
+    ::/8+, 0100::/64+, 2001:2::/48+, 2001:10::/28+, 2001:db8::/32+, 2002::/16+,
+    3ffe::/16+, 3fff::/20+, fc00::/7+, fe80::/10+, fec0::/10+, ff00::/8+
+];
+
+# ASNs that must never appear in a path. Private ASNs are rejected per session
+# unless the session sets allow_private_as (Vultr's 64515 needs it).
+define BOGON_ASNS  = [0, 23456, 64496..64511, 65535..131071];
+define PRIVATE_ASNS = [64512..65534, 4200000000..4294967294];
+define TIER1_ASNS  = [{{ bird_tier1_asns | join(', ') }}];
+
+# Everything we are allowed to announce, straight from NetBox.
+define OWN_V4       = [ {{ (node.own_v4 + node.anycast_all_v4) | bgp_prefix_set or '255.255.255.255/32' }} ];
+define OWN_V6       = [ {{ (node.own_v6 + node.block_entries + node.anycast_all_v6) | bgp_prefix_set or '::/128' }} ];
+define OWN_COVER_V4 = [ {{ (node.own_v4 + node.anycast_all_v4) | bgp_prefix_set(true) or '255.255.255.255/32' }} ];
+define ANYCAST_V4   = [ {{ node.anycast_all_v4 | bgp_prefix_set or '255.255.255.255/32' }} ];
+define ANYCAST_V6   = [ {{ node.anycast_all_v6 | bgp_prefix_set or '::/128' }} ];
+define OWN_COVER_V6 = [ {{ (node.own_v6 + node.block_entries + node.anycast_all_v6) | bgp_prefix_set(true) or '::/128' }} ];
+
+# Space inside our aggregates that belongs to someone else: never ours, so never filtered as ours.
+define REASSIGNED_V4 = [ {{ node.reassigned_v4 | bgp_prefix_set(true) or '255.255.255.255/32' }} ];
+define REASSIGNED_V6 = [ {{ node.reassigned_v6 | bgp_prefix_set(true) or '::/128' }} ];

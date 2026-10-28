@@ -1,0 +1,7 @@
+---
+prometheus_port: 9090
+prometheus_retention: 30d
+prometheus_scrape_interval: 30s
+# Alert thresholds. Full tables today are roughly 1M IPv4 and 230k IPv6 routes.
+prometheus_min_transit_prefixes_v4: 500000
+prometheus_min_transit_prefixes_v6: 100000

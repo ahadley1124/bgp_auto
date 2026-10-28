@@ -1,0 +1,144 @@
+---
+# 1. render into a staging directory and let BIRD parse it (nothing live has been touched)
+# 2. back up the live config, copy the staged files over it, run `configure check`
+# 3. `configure timeout`: BIRD reverts by itself unless we confirm after the health check passes
+# 4. any failure restores the backup and stops the whole rollout (any_errors_fatal in the play)
+- name: Clear the staging directory
+  ansible.builtin.file:
+    path: "{{ bird_staging_dir }}"
+    state: absent
+  check_mode: false
+
+- name: Render into staging
+  ansible.builtin.include_tasks: render.yml
+  vars:
+    render_node: "{{ bgp_node }}"
+    render_dir: "{{ bird_staging_dir }}"
+  tags: always
+
+- name: Stop here when only validating
+  ansible.builtin.meta: end_host
+  when: bgp_validate_only | bool
+
+- name: Directory for health expectations
+  ansible.builtin.file:
+    path: "{{ bgp_auto_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Protocols that must be up for this stage
+  ansible.builtin.copy:
+    dest: "{{ bgp_auto_dir }}/expected.json"
+    mode: "0640"
+    content: "{{ {'protocols': bgp_node | bgp_node_expected(bgp_health_classes)} | to_nice_json }}"
+  register: expected_file
+
+- name: Compare staged and live config
+  ansible.builtin.shell: |
+    diff -q {{ bird_staging_dir }}/bird.conf {{ bird_conf_dir }}/bird.conf &&
+    diff -rq {{ bird_staging_dir }}/generated {{ bird_conf_dir }}/generated
+  register: config_diff
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check whether BIRD is running
+  ansible.builtin.command: "systemctl is-active {{ bird_service }}"
+  register: bird_active
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Apply the new configuration
+  when:
+    - config_diff.rc != 0
+    - not ansible_check_mode
+  block:
+    - name: Timestamp for the backup
+      ansible.builtin.set_fact:
+        backup_stamp: "{{ lookup('ansible.builtin.pipe', 'date +%Y%m%d-%H%M%S') }}"
+
+    - name: Back up the live config
+      ansible.builtin.shell: |
+        set -e
+        mkdir -p {{ bird_backup_dir }}/{{ backup_stamp }}
+        cp -a {{ bird_conf_dir }}/bird.conf {{ bird_backup_dir }}/{{ backup_stamp }}/ 2>/dev/null || true
+        cp -a {{ bird_conf_dir }}/generated {{ bird_backup_dir }}/{{ backup_stamp }}/ 2>/dev/null || true
+        ls -1dt {{ bird_backup_dir }}/*/ | tail -n +{{ bird_backup_keep + 1 }} | xargs -r rm -rf
+      changed_when: false
+
+    - name: Copy the staged config into place
+      ansible.builtin.shell: |
+        set -e
+        mkdir -p {{ bird_conf_dir }}
+        rm -rf {{ bird_conf_dir }}/generated
+        cp -a {{ bird_staging_dir }}/generated {{ bird_conf_dir }}/generated
+        cp -a {{ bird_staging_dir }}/bird.conf {{ bird_conf_dir }}/bird.conf
+        chown -R root:bird {{ bird_conf_dir }}/bird.conf {{ bird_conf_dir }}/generated 2>/dev/null || true
+
+    - name: Start BIRD when it is not running yet
+      ansible.builtin.systemd:
+        name: "{{ bird_service }}"
+        state: started
+        enabled: true
+      when: bird_active.stdout != 'active'
+
+    - name: BIRD accepts the live config
+      ansible.builtin.command:
+        argv: ["{{ birdc_bin }}", configure, check]
+      changed_when: false
+
+    - name: Apply with automatic undo
+      ansible.builtin.command:
+        argv: ["{{ birdc_bin }}", configure, timeout, "{{ bird_confirm_timeout }}"]
+      register: configure_result
+      changed_when: true
+      when: bird_active.stdout == 'active'
+
+    - name: Wait for the expected sessions
+      ansible.builtin.command:
+        argv: ["{{ bgp_health_bin }}", --config, "{{ bgp_auto_dir }}/expected.json", --birdc, "{{ birdc_bin }}", --wait, "{{ bird_health_wait }}"]
+      register: health
+      changed_when: false
+
+    - name: Confirm the new configuration
+      ansible.builtin.command:
+        argv: ["{{ birdc_bin }}", configure, confirm]
+      changed_when: false
+      when: bird_active.stdout == 'active'
+
+  rescue:
+    - name: Undo the pending configuration
+      ansible.builtin.command:
+        argv: ["{{ birdc_bin }}", configure, undo]
+      failed_when: false
+      changed_when: false
+
+    - name: Put the backed-up config files back
+      ansible.builtin.shell: |
+        if [ -e {{ bird_backup_dir }}/{{ backup_stamp }}/bird.conf ]; then
+          rm -rf {{ bird_conf_dir }}/generated
+          cp -a {{ bird_backup_dir }}/{{ backup_stamp }}/bird.conf {{ bird_conf_dir }}/bird.conf
+          [ -d {{ bird_backup_dir }}/{{ backup_stamp }}/generated ] && cp -a {{ bird_backup_dir }}/{{ backup_stamp }}/generated {{ bird_conf_dir }}/generated
+          echo restored
+        else
+          echo "no previous config to restore"
+        fi
+      register: restore_result
+      changed_when: false
+      when: backup_stamp is defined
+
+    - name: Stop the rollout
+      ansible.builtin.fail:
+        msg: >-
+          {{ inventory_hostname }}: new BIRD config rejected or unhealthy, previous config kept
+          ({{ restore_result.stdout | default('nothing was copied') }}). Later routers were not touched.
+          Last output: {{ (health.stdout | default(ansible_failed_result.msg | default(''))) }}
+
+- name: Health check when the config did not change
+  ansible.builtin.command:
+    argv: ["{{ bgp_health_bin }}", --config, "{{ bgp_auto_dir }}/expected.json", --birdc, "{{ birdc_bin }}", --wait, "{{ bird_health_wait }}"]
+  changed_when: false
+  when:
+    - config_diff.rc == 0
+    - not ansible_check_mode

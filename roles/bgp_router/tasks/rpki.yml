@@ -1,0 +1,43 @@
+---
+# Routinator on transit routers. Unverified on a live host: package source and flags follow
+# the NLnet Labs docs; check `routinator --version` and `systemctl status routinator` first run.
+- name: NLnet Labs repository key
+  ansible.builtin.get_url:
+    url: "{{ rpki_routinator_repo_key }}"
+    dest: /usr/share/keyrings/nlnetlabs-archive-keyring.asc
+    mode: "0644"
+
+- name: NLnet Labs repository
+  ansible.builtin.apt_repository:
+    repo: "{{ rpki_routinator_repo }}"
+    filename: nlnetlabs
+    state: present
+
+- name: Install Routinator
+  ansible.builtin.apt:
+    name: routinator
+    state: present
+    update_cache: true
+
+- name: Initialise the TALs (accepts the ARIN RPA)
+  ansible.builtin.command:
+    argv: [runuser, -u, "{{ rpki_user }}", --, routinator-init, --accept-arin-rpa]
+    creates: "/var/lib/routinator/tals/arin.tal"
+
+- name: Routinator listens on localhost and on this router's loopback
+  ansible.builtin.copy:
+    dest: /etc/routinator/routinator.conf
+    mode: "0644"
+    content: |
+      # {{ ansible_managed }}
+      repository-dir = "/var/lib/routinator/rpki-cache"
+      tal-dir = "/var/lib/routinator/tals"
+      rtr-listen = ["127.0.0.1:{{ bgp_node.policy.rtr_port }}", "{{ bgp_node.loopback4 }}:{{ bgp_node.policy.rtr_port }}"]
+      http-listen = ["127.0.0.1:9556"]
+  notify: restart routinator
+
+- name: Routinator enabled
+  ansible.builtin.systemd:
+    name: routinator
+    state: started
+    enabled: true

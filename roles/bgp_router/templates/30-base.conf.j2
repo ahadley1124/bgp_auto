@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+protocol device {
+    scan time 10;
+}
+
+protocol kernel kernel4 {
+    scan time 20;
+    ipv4 {
+        import none;
+        export filter kernel_export4;
+    };
+}
+
+protocol kernel kernel6 {
+    scan time 20;
+    ipv6 {
+        import none;
+        export filter kernel_export6;
+    };
+}

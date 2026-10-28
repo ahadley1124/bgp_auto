@@ -1,0 +1,15 @@
+---
+# Where the helper scripts live (relative to the playbook, so CI and laptops both work).
+netbox_model_fetch_script: "{{ playbook_dir }}/../scripts/netbox_fetch.py"
+netbox_model_irr_script: "{{ playbook_dir }}/../scripts/irr_fetch.py"
+netbox_model_work_dir: "{{ playbook_dir }}/../.cache"
+
+# IRR prefix lists come from bgpq4 on the controller. Set netbox_model_irr_file to a JSON
+# file in irr_fetch.py's format to skip bgpq4 entirely (used by the tests).
+netbox_model_irr_file: ""
+netbox_model_irr_ttl_hours: 12
+netbox_model_bgpq4: bgpq4
+netbox_model_irr_sources: "RIPE,RADB,ARIN,APNIC,AFRINIC,LACNIC"
+
+# Overrides merged over DEFAULT_POLICY in filter_plugins/bgp_auto.py (local-pref, max-prefix, ...).
+bgp_policy: {}

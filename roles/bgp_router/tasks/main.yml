@@ -1,0 +1,21 @@
+---
+# Per-router BIRD deploy: install, validator, render, validate, apply with automatic rollback.
+- name: Load this router's model
+  ansible.builtin.set_fact:
+    bgp_node: "{{ hostvars['localhost'].bgp_model_data.nodes[inventory_hostname] }}"
+  no_log: true
+
+- name: Install BIRD
+  ansible.builtin.include_tasks: install.yml
+  when: bird_install and not (bgp_validate_only | bool) and not ansible_check_mode
+
+- name: Prepare state directories and the health check
+  ansible.builtin.include_tasks: prepare.yml
+  when: not (bgp_validate_only | bool) and not ansible_check_mode
+
+- name: RPKI validator
+  ansible.builtin.include_tasks: rpki.yml
+  when: bgp_manage_rpki and bgp_node.rpki_validator and not (bgp_validate_only | bool) and not ansible_check_mode
+
+- name: Render, validate and apply
+  ansible.builtin.include_tasks: apply.yml

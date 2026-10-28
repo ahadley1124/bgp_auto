@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""Fake birdc for the Ansible integration test. Invoked through a symlink named birdc-<host>.
+Logs every call to $BGPTEST_ROOT/birdc.log and answers `show protocols` from the host's expected.json."""
+import json, os, sys, time
+root = os.environ["BGPTEST_ROOT"]
+host = os.path.basename(sys.argv[0]).split("birdc-", 1)[-1]
+args = sys.argv[1:]
+with open(os.path.join(root, "birdc.log"), "a") as f:
+    f.write("%s %s %s\n" % (time.time(), host, " ".join(args)))
+if args[:2] == ["show", "protocols"]:
+    names = json.load(open(os.path.join(root, host, "bgp-auto", "expected.json")))["protocols"]
+    print("BIRD 3.0 ready.\nName       Proto      Table      State  Since         Info")
+    broken = os.path.exists(os.path.join(root, "FAIL_" + host))
+    for i, n in enumerate(names):
+        if broken and i == 0:
+            print("%-10s BGP        ---        start  2026-10-27 12:00:00  Connect" % n)
+        else:
+            print("%-10s BGP        ---        up     2026-10-27 12:00:00  Established" % n)
+    sys.exit(0)
+print("0000 OK")

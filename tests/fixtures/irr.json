@@ -1,0 +1,1 @@
+{"AS-EXAMPLE": {"4": [{"prefix": "4.4.0.0/16", "exact": true}, {"prefix": "4.8.0.0/14", "exact": false, "greater-equal": 14, "less-equal": 24}], "6": []}}

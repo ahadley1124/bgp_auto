@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+# Main BIRD config for {{ node.name }} ({{ node.role }}). Edit NetBox, not this file.
+router id {{ node.loopback4 }};
+log syslog all;
+timeformat protocol iso long;
+
+include "generated/00-defs.conf";
+{% if node.rtr_servers %}
+include "generated/10-rpki.conf";
+{% endif %}
+include "generated/20-filters.conf";
+include "generated/25-prefix-sets.conf";
+include "generated/30-base.conf";
+include "generated/40-ospf.conf";
+include "generated/50-ibgp.conf";
+{% if node.originate or node.originate_block or node.originate_anycast %}
+include "generated/60-originate.conf";
+{% endif %}
+{% if node.sessions %}
+include "generated/70-ebgp.conf";
+{% endif %}
+{% if bird_uses_bfd %}
+include "generated/80-bfd.conf";
+{% endif %}

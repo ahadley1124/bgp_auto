@@ -1,0 +1,36 @@
+---
+# Renders every router's BIRD config from NetBox on THIS machine and parses it with `bird -p`.
+# No host is contacted and nothing is changed, so it is safe for pull requests and for a quick
+# "will this NetBox change be accepted?" check. Needs bird (any 2.x/3.x) on the machine running it.
+#   ansible-playbook -i localhost, playbooks/validate.yml
+- name: Validate NetBox data and the configs it produces
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    validate_dir: "{{ playbook_dir }}/../.cache/validate"
+  roles:
+    - netbox_model
+  tasks:
+    - name: Remove old renders
+      ansible.builtin.file:
+        path: "{{ validate_dir }}"
+        state: absent
+
+    - name: Render and parse each router
+      ansible.builtin.include_role:
+        name: bgp_router
+        tasks_from: render.yml
+      vars:
+        render_node: "{{ router.value }}"
+        render_dir: "{{ validate_dir }}/{{ router.key }}"
+      loop: "{{ bgp_model_data.nodes | dict2items | selectattr('value.is_router') | list }}"
+      loop_control:
+        loop_var: router
+        label: "{{ router.key }}"
+      tags: always
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "{{ bgp_model_data.nodes | dict2items | selectattr('value.is_router') | map(attribute='key') | list }} parsed OK by bird -p"

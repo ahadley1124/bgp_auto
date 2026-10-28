@@ -1,0 +1,156 @@
+---
+# Joins the VM to the Cloudflare Mesh, reads the mesh IP it was given and records it in NetBox
+# (custom field mesh_ip) so the other roles can build tunnels and exporter addresses from it.
+# The Mesh device profile must be split-tunnel INCLUDE 100.96.0.0/12 only, otherwise WARP would
+# capture the default route. The role refuses to continue if that happened.
+- name: Cloudflare credentials are present
+  ansible.builtin.assert:
+    that:
+      - cloudflare_account_id | length > 0
+      - cloudflare_api_token | length > 0
+    fail_msg: Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in the environment.
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Cloudflare WARP repository key
+  ansible.builtin.shell: >-
+    curl -fsSL {{ mesh_repo_key }} | gpg --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+
+- name: Cloudflare WARP repository
+  ansible.builtin.apt_repository:
+    repo: "{{ mesh_repo }}"
+    filename: cloudflare-warp
+    state: present
+
+- name: Install the WARP client
+  ansible.builtin.apt:
+    name: cloudflare-warp
+    state: present
+    update_cache: true
+
+- name: WARP service running
+  ansible.builtin.systemd:
+    name: warp-svc
+    state: started
+    enabled: true
+
+- name: Current mesh state
+  ansible.builtin.command:
+    argv: "{{ mesh_status_cmd }}"
+  register: mesh_status
+  changed_when: false
+  failed_when: false
+
+- name: Register this node with Cloudflare
+  when: "'Connected' not in mesh_status.stdout"
+  block:
+    - name: Look for an existing node with this name
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api }}/accounts/{{ cloudflare_account_id }}/warp_connector?name={{ mesh_node_name | urlencode }}&is_deleted=false"
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+        return_content: true
+      register: mesh_lookup
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Create the node when it does not exist
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api }}/accounts/{{ cloudflare_account_id }}/warp_connector"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+        body_format: json
+        body: {name: "{{ mesh_node_name }}"}
+        return_content: true
+      register: mesh_created
+      when: mesh_lookup.json.result | length == 0
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Node id
+      ansible.builtin.set_fact:
+        mesh_node_id: "{{ (mesh_created.json.result.id if mesh_created is not skipped else mesh_lookup.json.result[0].id) }}"
+      no_log: true
+
+    - name: Fetch the node's install token
+      ansible.builtin.uri:
+        url: "{{ cloudflare_api }}/accounts/{{ cloudflare_account_id }}/warp_connector/{{ mesh_node_id }}/token"
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+        return_content: true
+      register: mesh_token
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Register the client
+      ansible.builtin.command:
+        argv: "{{ mesh_register_cmd + [mesh_token.json.result] }}"
+      no_log: true
+      changed_when: true
+
+    - name: Connect
+      ansible.builtin.command:
+        argv: "{{ mesh_connect_cmd }}"
+      changed_when: true
+
+- name: Wait for the mesh address
+  ansible.builtin.command:
+    argv: [ip, -j, -4, addr, show, dev, "{{ mesh_interface }}"]
+  register: mesh_addr
+  retries: "{{ mesh_wait_retries }}"
+  delay: 3
+  until: >-
+    mesh_addr.rc == 0 and
+    (mesh_addr.stdout | from_json | map(attribute='addr_info') | flatten
+      | map(attribute='local') | select('match', mesh_ip_regex) | list | length > 0)
+  changed_when: false
+
+- name: Mesh address
+  ansible.builtin.set_fact:
+    mesh_found_ip: >-
+      {{ mesh_addr.stdout | from_json | map(attribute='addr_info') | flatten
+         | map(attribute='local') | select('match', mesh_ip_regex) | first }}
+
+- name: Safety check, the default route must not go through the mesh
+  ansible.builtin.command:
+    argv: [ip, -j, route, show, default]
+  register: mesh_default_route
+  changed_when: false
+
+- name: Disconnect WARP if it took the default route
+  ansible.builtin.command:
+    argv: "{{ mesh_disconnect_cmd }}"
+  when: mesh_default_route.stdout | from_json | selectattr('dev', 'equalto', mesh_interface) | list | length > 0
+  changed_when: true
+
+- name: Refuse to continue if WARP took the default route
+  ansible.builtin.fail:
+    msg: >-
+      The default route went through {{ mesh_interface }}. The Cloudflare device profile for this node
+      must be split-tunnel INCLUDE {{ mesh_cidr }} only. WARP was disconnected.
+  when: mesh_default_route.stdout | from_json | selectattr('dev', 'equalto', mesh_interface) | list | length > 0
+
+- name: Record the mesh address in NetBox
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ playbook_dir }}/../scripts/netbox_fetch.py"
+      - set-cf
+      - "{{ inventory_hostname }}"
+      - mesh_ip
+      - "{{ mesh_found_ip }}/32"
+  environment:
+    NETBOX_URL: "{{ lookup('ansible.builtin.env', 'NETBOX_URL') or lookup('ansible.builtin.env', 'NETBOX_API') }}"
+    NETBOX_TOKEN: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+  delegate_to: localhost
+  become: false
+  register: mesh_netbox
+  changed_when: "'changed' == mesh_netbox.stdout | trim"
+  no_log: true

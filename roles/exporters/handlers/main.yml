@@ -1,0 +1,10 @@
+---
+- name: restart node exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    state: restarted
+
+- name: restart bird exporter
+  ansible.builtin.systemd:
+    name: prometheus-bird-exporter
+    state: restarted

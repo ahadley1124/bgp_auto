@@ -1,0 +1,23 @@
+---
+# Cloudflare One Mesh: each VM is a "WARP Connector" node. The API token needs
+# Account > Cloudflare One Connectors: Edit (or Cloudflare Tunnel: Edit on older accounts).
+cloudflare_account_id: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_ACCOUNT_ID') }}"
+cloudflare_api_token: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN') }}"
+cloudflare_api: https://api.cloudflare.com/client/v4
+
+# Name of the node in the Cloudflare dashboard.
+mesh_node_name: "{{ inventory_hostname }}"
+mesh_interface: CloudflareWARP
+mesh_cidr: 100.96.0.0/12
+# 100.96.0.0/12 is 100.96.x.x to 100.111.x.x
+mesh_ip_regex: '^100\.(9[6-9]|10[0-9]|11[01])\.'
+mesh_wait_retries: 20
+
+# warp-cli syntax follows Cloudflare's WARP Connector docs; adjust here if a client release changes it.
+mesh_register_cmd: [warp-cli, --accept-tos, connector, new]
+mesh_connect_cmd: [warp-cli, --accept-tos, connect]
+mesh_disconnect_cmd: [warp-cli, --accept-tos, disconnect]
+mesh_status_cmd: [warp-cli, --accept-tos, status]
+
+mesh_repo_key: https://pkg.cloudflareclient.com/pubkey.gpg
+mesh_repo: "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ {{ ansible_distribution_release }} main"

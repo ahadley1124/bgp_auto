@@ -1,0 +1,6 @@
+---
+exporter_node_port: 9100
+exporter_bird_port: 9324
+# Debian's bird3 uses /run/bird/bird.ctl. The exporter's -bird.v2 mode is believed to work with
+# BIRD 3 but has not been tested against it.
+exporter_bird_socket: /run/bird/bird.ctl

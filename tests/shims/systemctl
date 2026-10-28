@@ -1,0 +1,3 @@
+#!/bin/sh
+[ "$1" = "is-active" ] && { echo active; exit 0; }
+exit 0
