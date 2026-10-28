@@ -184,3 +184,121 @@ class BlockAnnouncementTests(unittest.TestCase):
             for host in os.listdir(out):
                 p = subprocess.run(["bird", "-p", "-c", os.path.join(out, host, "bird.conf")], capture_output=True, text=True, cwd="/")
                 self.assertEqual(p.returncode, 0, host + ": " + p.stderr)
+
+
+class AnycastRenderTests(unittest.TestCase):
+    def fixture(self, d):
+        raw = json.load(open(os.path.join(HERE, "fixtures", "netbox.json")))
+        raw["anycast_prefixes"] = [{"prefix": "2001:db8:5008::/46", "status": {"value": "active"}}]
+        for dev in raw["devices"]:
+            if dev["name"] in ("vultr-transit", "nl-transit"):
+                dev["custom_fields"]["anycast_originate"] = True
+        for s in raw["sessions"]:
+            if s["name"] == "vultr-v6":
+                s["custom_fields"].update(anycast_prepend=2, anycast_communities="20473:6001:3356, 64601:3356")
+        fx = os.path.join(d, "fx.json"); json.dump(raw, open(fx, "w")); return fx
+
+    def test_render_and_parse(self):
+        if not __import__("shutil").which("bird"):
+            self.skipTest("needs bird")
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "out")
+            subprocess.check_call([sys.executable, os.path.join(HERE, "render_bird.py"), out, "--fixture", self.fixture(d),
+                                   "--irr-json", os.path.join(HERE, "fixtures", "irr.json")], stdout=subprocess.DEVNULL)
+            for host in ("vultr-transit", "nl-transit"):
+                orig = open(os.path.join(out, host, "generated", "60-originate.conf")).read()
+                self.assertIn("route 2001:db8:5008::/46 blackhole;", orig)
+            ix = open(os.path.join(out, "vultr-ix1", "generated", "60-originate.conf")).read()
+            self.assertNotIn("5008", ix, "only anycast_originate routers originate it")
+            ebgp = open(os.path.join(out, "vultr-transit", "generated", "70-ebgp.conf")).read()
+            self.assertIn("if net ~ ANYCAST_V6 then {", ebgp)
+            self.assertIn("bgp_large_community.add((20473, 6001, 3356));", ebgp)
+            self.assertIn("bgp_community.add((64601, 3356));", ebgp)
+            self.assertEqual(ebgp.count("bgp_path.prepend(17290);"), 2 + 0, "2 anycast prepends, v4 session has none")
+            nl = open(os.path.join(out, "nl-transit", "generated", "70-ebgp.conf")).read()
+            self.assertNotIn("ANYCAST_V6 then", nl)
+            for host in os.listdir(out):
+                p = subprocess.run(["bird", "-p", "-c", os.path.join(out, host, "bird.conf")], capture_output=True, text=True, cwd="/")
+                self.assertEqual(p.returncode, 0, host + ": " + p.stderr)
+
+    def test_validation(self):
+        sys.path.insert(0, os.path.join(ROOT, "filter_plugins"))
+        import bgp_auto as b
+        raw = json.load(open(os.path.join(HERE, "fixtures", "netbox.json")))
+        raw["anycast_prefixes"] = [{"prefix": "2001:db8:ffff::/46"}, {"prefix": "2001:db8:5008::/52"}]
+        for s in raw["sessions"]:
+            if s["name"] == "vultr-v6":
+                s["custom_fields"].update(anycast_communities="not-a-community")
+        errs = " | ".join(b.build_model(raw, {})["errors"])
+        self.assertIn("not inside our own prefixes", errs)
+        self.assertIn("too specific", errs)
+        self.assertIn("bad community", errs)
+
+
+class AnycastWatchTests(unittest.TestCase):
+    PFX = "2602:fa86:ff8::/46"
+
+    def lg(self, rows):
+        return {"data": {"rrcs": [{"rrc": "RRC00", "peers": [dict(prefix=self.PFX, as_path=p) for p in rows]}]}}
+
+    def cfg(self, **kw):
+        c = {"own_asn": 17290, "prefixes": [self.PFX], "tier1_asns": [174, 1299, 3356, 2914],
+             "entries": {"20473": {"name": "Vultr", "sessions": [{"device": "vultr-transit", "label": "vultr-v6", "family": 6, "prepend": 0}]},
+                         "205941": {"name": "NL", "sessions": [{"device": "nl-transit", "label": "nl-v6", "family": 6, "prepend": 0}]}}}
+        c.update(kw); return c
+
+    def load(self):
+        return load(os.path.join(ROOT, "scripts", "anycast_watch.py"), "aw")
+
+    def test_entry_and_shares(self):
+        aw = self.load()
+        res = aw.analyze({self.PFX: self.lg(["1299 20473 17290", "3356 20473 17290 17290", "174 205941 17290", "9999 20473 17290"])}, self.cfg())
+        info = res["prefixes"][self.PFX]
+        self.assertEqual(info["tier1_seen"], 3, "non tier-1 collector peers are ignored")
+        self.assertAlmostEqual(info["share"]["20473"], 2 / 3, places=3)
+        self.assertEqual(info["per_tier1"]["3356"]["length"], 4)
+        self.assertEqual(info["per_tier1"]["3356"]["entry"], 20473)
+
+    def test_suggests_prepend_on_overloaded_entry_and_never_applies(self):
+        aw = self.load()
+        data = self.lg(["1299 20473 17290", "3356 20473 17290", "174 20473 17290", "2914 205941 17290"])
+        res = aw.analyze({self.PFX: data}, self.cfg(target_share={"20473": 0.5}))
+        s = res["suggestions"]
+        self.assertEqual(len(s), 1)
+        self.assertEqual((s[0]["session"], s[0]["from"], s[0]["to"]), ("vultr-v6", 0, 1))
+        self.assertIn("anycast_prepend=1", s[0]["netbox"])
+        self.assertIn("bgp_auto_anycast_suggestion", aw.prom(res, self.cfg()))
+
+    def test_only_sessions_of_the_prefix_family(self):
+        aw = self.load()
+        cfg = self.cfg(target_share={"20473": 0.5})
+        cfg["entries"]["20473"]["sessions"].append({"device": "vultr-transit", "label": "vultr-v4", "family": 4, "prepend": 0})
+        data = self.lg(["1299 20473 17290", "3356 20473 17290", "174 20473 17290", "2914 205941 17290"])
+        self.assertEqual([s["session"] for s in aw.analyze({self.PFX: data}, cfg)["suggestions"]], ["vultr-v6"])
+
+    def test_balanced_gives_no_suggestion(self):
+        aw = self.load()
+        data = self.lg(["1299 20473 17290", "3356 205941 17290"])
+        self.assertEqual(aw.analyze({self.PFX: data}, self.cfg(target_share={"20473": 0.5}))["suggestions"], [])
+
+    def test_prepend_capped(self):
+        aw = self.load()
+        cfg = self.cfg(target_share={"20473": 0.2})
+        cfg["entries"]["20473"]["sessions"][0]["prepend"] = 3
+        res = aw.analyze({self.PFX: self.lg(["1299 20473 17290", "3356 20473 17290"])}, cfg)
+        self.assertEqual(res["suggestions"], [])
+
+    def test_prefix_not_seen_alerts(self):
+        aw = self.load()
+        res = aw.analyze({self.PFX: self.lg(["9999 20473 17290"])}, self.cfg())
+        self.assertTrue(res["alerts"])
+
+    def test_cli_offline(self):
+        with tempfile.TemporaryDirectory() as d:
+            json.dump(self.cfg(target_share={"20473": 0.5}), open(os.path.join(d, "c.json"), "w"))
+            json.dump({self.PFX: self.lg(["1299 20473 17290", "3356 20473 17290", "174 20473 17290"])}, open(os.path.join(d, "in.json"), "w"))
+            p = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "anycast_watch.py"), "--config", os.path.join(d, "c.json"),
+                                "--out-dir", os.path.join(d, "o"), "--input", os.path.join(d, "in.json")], capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("SUGGESTION", p.stdout)
+            self.assertTrue(os.path.exists(os.path.join(d, "o", "anycast.prom")))

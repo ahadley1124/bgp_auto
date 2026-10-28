@@ -37,3 +37,19 @@ protocol static originate_block6 {
     route {{ node.originate_block }} blackhole;
 }
 {% endif %}
+{% if node.originate_anycast %}
+{% for fam, entries in [(4, node.anycast_all_v4), (6, node.anycast_all_v6)] if entries %}
+
+protocol static originate_anycast{{ fam }} {
+    description "Anycast prefixes from NetBox (tag bgp-anycast)";
+    ipv{{ fam }} {
+        import filter { bgp_large_community.add(LC_LOCAL_ORIGIN); accept; };
+    };
+    # Service addresses learned from the VMs that serve this anycast prefix are more specific
+    # and win; the rest of the prefix is dropped here.
+{% for e in entries %}
+    route {{ e.prefix }} blackhole;
+{% endfor %}
+}
+{% endfor %}
+{% endif %}

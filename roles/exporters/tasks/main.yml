@@ -30,7 +30,7 @@
     mode: "0644"
     content: |
       # {{ ansible_managed }}
-      ARGS="--web.listen-address={{ exp_node.exporter_addr }}:{{ exporter_node_port }} --collector.systemd"
+      ARGS="--web.listen-address={{ exp_node.exporter_addr }}:{{ exporter_node_port }} --collector.systemd --collector.textfile.directory=/var/lib/prometheus/node-exporter"
   notify: restart node exporter
 
 - name: BIRD exporter arguments

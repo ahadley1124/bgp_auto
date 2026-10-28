@@ -39,7 +39,9 @@ class H(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         key = ROUTES.get(u.path)
         if not key: return self.send(404, {"detail": "not found"})
-        rows = DATA[key]
+        if key == "tagged_prefixes" and q.get("tag") == ["bgp-anycast"]:
+            key = "anycast_prefixes"
+        rows = DATA.get(key, [])
         if "name" in q: rows = [r for r in rows if r.get("name") in q["name"]]
         off = int(q.get("offset", ["0"])[0]); lim = min(int(q.get("limit", ["50"])[0]), a.page)
         nxt = None

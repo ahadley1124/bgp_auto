@@ -32,7 +32,9 @@ define PRIVATE_ASNS = [64512..65534, 4200000000..4294967294];
 define TIER1_ASNS  = [{{ bird_tier1_asns | join(', ') }}];
 
 # Everything we are allowed to announce, straight from NetBox.
-define OWN_V4       = [ {{ node.own_v4 | bgp_prefix_set or '255.255.255.255/32' }} ];
-define OWN_V6       = [ {{ (node.own_v6 + node.block_entries) | bgp_prefix_set or '::/128' }} ];
-define OWN_COVER_V4 = [ {{ node.own_v4 | bgp_prefix_set(true) or '255.255.255.255/32' }} ];
-define OWN_COVER_V6 = [ {{ (node.own_v6 + node.block_entries) | bgp_prefix_set(true) or '::/128' }} ];
+define OWN_V4       = [ {{ (node.own_v4 + node.anycast_all_v4) | bgp_prefix_set or '255.255.255.255/32' }} ];
+define OWN_V6       = [ {{ (node.own_v6 + node.block_entries + node.anycast_all_v6) | bgp_prefix_set or '::/128' }} ];
+define OWN_COVER_V4 = [ {{ (node.own_v4 + node.anycast_all_v4) | bgp_prefix_set(true) or '255.255.255.255/32' }} ];
+define ANYCAST_V4   = [ {{ node.anycast_all_v4 | bgp_prefix_set or '255.255.255.255/32' }} ];
+define ANYCAST_V6   = [ {{ node.anycast_all_v6 | bgp_prefix_set or '::/128' }} ];
+define OWN_COVER_V6 = [ {{ (node.own_v6 + node.block_entries + node.anycast_all_v6) | bgp_prefix_set(true) or '::/128' }} ];

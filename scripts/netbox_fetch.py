@@ -25,6 +25,7 @@ ENDPOINTS = {
     "prefix_lists": "/api/plugins/bgp/prefixlist/",
     "prefix_list_rules": "/api/plugins/bgp/prefixlistrule/",
     "tagged_prefixes": "/api/ipam/prefixes/?tag=bgp-originate",
+    "anycast_prefixes": "/api/ipam/prefixes/?tag=bgp-anycast",
 }
 REQUIRED = ("devices", "sessions")
 

@@ -1,0 +1,68 @@
+---
+# Runs on the monitoring VM. Every few minutes it asks RIPEstat (RIS collectors) how tier-1 networks
+# reach each anycast prefix, exports metrics to Prometheus and writes suggested NetBox changes.
+# It never changes a router: a person applies a suggestion by editing the session in NetBox.
+- name: Anycast prefixes in the model
+  ansible.builtin.set_fact:
+    anycast_cfg: >-
+      {{ hostvars['localhost'].bgp_model_data | bgp_anycast_watch(bgp_policy | default({}))
+         | combine({'tier1_asns': anycast_tier1_asns, 'target_share': anycast_target_share,
+                    'tolerance': anycast_tolerance, 'max_prepend': anycast_max_prepend}) }}
+
+- name: Watcher, only when there are anycast prefixes
+  when: anycast_cfg.prefixes | length > 0 and not ansible_check_mode
+  block:
+    - name: Directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ anycast_textfile_dir }}"
+        - "{{ anycast_state_dir }}"
+
+    - name: The watcher
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/anycast_watch.py"
+        dest: /usr/local/sbin/bgp-auto-anycast-watch
+        mode: "0755"
+
+    - name: Its settings
+      ansible.builtin.copy:
+        dest: "{{ anycast_state_dir }}/anycast.json"
+        mode: "0644"
+        content: "{{ anycast_cfg | to_nice_json }}"
+
+    - name: Service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/bgp-auto-anycast-watch.service
+        mode: "0644"
+        content: |
+          # {{ ansible_managed }}
+          [Unit]
+          Description=bgp_auto anycast tier-1 path watcher
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/bgp-auto-anycast-watch --config {{ anycast_state_dir }}/anycast.json --out-dir {{ anycast_textfile_dir }}
+          ExecStartPost=/bin/sh -c 'mv -f {{ anycast_textfile_dir }}/anycast-suggestions.json {{ anycast_state_dir }}/anycast-suggestions.json'
+
+    - name: Timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/bgp-auto-anycast-watch.timer
+        mode: "0644"
+        content: |
+          # {{ ansible_managed }}
+          [Unit]
+          Description=bgp_auto anycast watcher
+          [Timer]
+          OnBootSec=2min
+          OnUnitActiveSec={{ anycast_interval }}
+          [Install]
+          WantedBy=timers.target
+
+    - name: Timer enabled
+      ansible.builtin.systemd:
+        name: bgp-auto-anycast-watch.timer
+        enabled: true
+        state: started
+        daemon_reload: true

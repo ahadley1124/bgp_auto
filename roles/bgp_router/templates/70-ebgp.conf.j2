@@ -62,6 +62,20 @@ filter IMP_{{ s.pname }} {
 
 filter EXP_{{ s.pname }} {
     if !export_ok() then reject;
+{% if s.anycast_prepend or s.anycast_std or s.anycast_large %}
+    # Anycast steering: applies to the anycast prefixes only, set per session in NetBox.
+    if net ~ ANYCAST_V{{ s.family }} then {
+{% for c in s.anycast_std %}
+        bgp_community.add({{ c }});
+{% endfor %}
+{% for c in s.anycast_large %}
+        bgp_large_community.add({{ c }});
+{% endfor %}
+{% for i in range(s.anycast_prepend) %}
+        bgp_path.prepend({{ s.local_as }});
+{% endfor %}
+    }
+{% endif %}
 {% if s.graceful_shutdown %}
     bgp_community.add((65535, 0));
 {% endif %}

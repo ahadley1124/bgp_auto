@@ -42,6 +42,26 @@ at Vultr and coming back. Every router treats all the /48s as our own space, so 
 on but never originates it, and the /48 learned back from an IX peer is rejected as our own space. The rest of the
 /48 is dropped on the owning router until you route it somewhere.
 
+## Anycast prefix and tier-1 watching
+
+* **Prefix:** create the anycast prefix in NetBox IPAM and tag it `bgp-anycast`. For AS17290 that is planned as
+  `2602:fa86:ff8::/46` (next free /46 below the `ffe` /48; confirm `ff8` to `ffb` are unused first). It must be
+  inside your own space and must not overlap a VM's /48. It also needs a ROA and an IRR `route6` object.
+* **Sites:** set `anycast_originate` on both transit routers. Each originates the prefix (a blackhole route, so
+  service addresses learned from the VMs that serve it are more specific and win).
+* **Steering, per session, only on the anycast prefix:** `anycast_prepend` (0-5) and `anycast_communities`
+  (comma separated, `a:b` or `a:b:c`, e.g. Vultr's `20473:6001:3356` to prepend once toward AS3356).
+  Set `path_asn` when the AS shown in paths differs from the session AS (Vultr defaults to 20473).
+* **Watcher (monitoring VM):** every 15 minutes it asks RIPEstat's looking glass (RIPE RIS) how tier-1 networks
+  reach the prefix, exports `bgp_auto_anycast_*` metrics (tier-1s that see it, AS path length per tier-1, share of
+  tier-1 views entering via each transit) and writes `/var/lib/bgp-auto/anycast-suggestions.json`.
+  Set `anycast_target_share` (e.g. `{20473: 0.6}`) to get suggestions such as "set `anycast_prepend=1` on
+  session `vultr-v6`". **Suggestions are never applied automatically.** You approve by editing the session in
+  NetBox and running the playbook (the usual validate, apply, rollback flow). Alerts: prefix not seen at any
+  tier-1, change suggested.
+* Limits: RIS has few tier-1 peers, so this is a sample, not a census; the looking-glass output format and the
+  transit communities of AS205941 are not verified here.
+
 ## Policy
 
 | What | How |

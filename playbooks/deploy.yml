@@ -105,6 +105,8 @@
       tags: exporters
     - role: prometheus
       tags: prometheus
+    - role: anycast_watch
+      tags: anycast
 
 - name: Legacy hosts (old bird + gre roles, unchanged)
   hosts: "{{ device_name | default('all') }}"

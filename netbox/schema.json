@@ -21,6 +21,11 @@
       "name": "bgp-originate",
       "slug": "bgp-originate",
       "color": "9c27b0"
+    },
+    {
+      "name": "bgp-anycast",
+      "slug": "bgp-anycast",
+      "color": "e91e63"
     }
   ],
   "custom_fields": [
@@ -229,6 +234,34 @@
       "type": "text",
       "label": "Static import prefix list",
       "description": "Name of a netbox_bgp prefix list that overrides the IRR filter"
+    },
+    {
+      "object": "dcim.device",
+      "name": "anycast_originate",
+      "type": "boolean",
+      "label": "Originate anycast prefixes",
+      "description": "Router announces every IPAM prefix tagged bgp-anycast (set on both transits)"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "anycast_prepend",
+      "type": "integer",
+      "label": "Anycast prepends",
+      "description": "Extra prepends on anycast prefixes only, 0-5"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "anycast_communities",
+      "type": "text",
+      "label": "Anycast communities",
+      "description": "Comma separated standard (a:b) or large (a:b:c) communities added to anycast prefixes only, e.g. 20473:6001:3356"
+    },
+    {
+      "object": "netbox_bgp.bgpsession",
+      "name": "path_asn",
+      "type": "integer",
+      "label": "AS seen in paths",
+      "description": "The AS that appears next to ours in paths (Vultr: 20473, since the session is AS64515)"
     }
   ]
 }

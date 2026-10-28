@@ -31,6 +31,7 @@ SESSION_CLASSES = ("transit", "ix-rs", "ix-bilateral", "customer")
 DEFAULT_POLICY = {
     "own_asn": 17290,
     "transit_asns": [64515, 205941],
+    "path_asn_map": {64515: 20473},   # Vultr sessions are AS64515 but paths show AS20473
     "own_prefix_lists": {"4": "OWN-V4", "6": "OWN-V6"},
     "own_prefix_tag": "bgp-originate",
     "device_statuses": ["active"],
@@ -193,6 +194,54 @@ def _own_prefixes(raw, cfg, lists, errors):
     return own
 
 
+_STD_COMM = re.compile(r"^(\d{1,5}):(\d{1,5})$")
+_LARGE_COMM = re.compile(r"^(\d{1,10}):(\d{1,10}):(\d{1,10})$")
+
+
+def _communities(text, label, errors):
+    """Split "64601:3356, 20473:6001:3356" into BIRD tuples. Standard and large communities."""
+    std, large = [], []
+    for item in [x.strip() for x in re.split(r"[,\s]+", str(text or "")) if x.strip()]:
+        m = _STD_COMM.match(item)
+        if m and int(m.group(1)) <= 65535 and int(m.group(2)) <= 65535:
+            std.append("(%s, %s)" % m.groups())
+            continue
+        m = _LARGE_COMM.match(item)
+        if m:
+            large.append("(%s, %s, %s)" % m.groups())
+            continue
+        errors.append("session %s: bad community %r in anycast_communities" % (label, item))
+    return std, large
+
+
+def _anycast_prefixes(raw, own, blocks, errors):
+    """Anycast prefixes: IPAM prefixes tagged bgp-anycast. Originated by devices with anycast_originate."""
+    out = []
+    own_nets = [ipaddress.ip_network(e["prefix"], strict=False) for fam in ("4", "6") for e in own[fam]]
+    for p in raw.get("anycast_prefixes") or []:
+        if _val(p.get("status")) not in (None, "active"):
+            continue
+        try:
+            e = _prefix_entry(p.get("prefix"))
+            net = ipaddress.ip_network(e["prefix"], strict=True)
+        except ValueError:
+            errors.append("anycast prefix: bad prefix %r" % p.get("prefix"))
+            continue
+        if e["len"] > (24 if net.version == 4 else 48):
+            errors.append("anycast prefix %s is too specific to be accepted by the internet" % net)
+            continue
+        if own_nets and not any(net.version == o.version and net.subnet_of(o) for o in own_nets):
+            errors.append("anycast prefix %s is not inside our own prefixes" % net)
+            continue
+        clash = [str(b) for b in blocks if net.version == 6 and net.overlaps(b)]
+        if clash:
+            errors.append("anycast prefix %s overlaps the /48 block(s) %s" % (net, ", ".join(clash)))
+            continue
+        e = dict(e); e["ge"] = None; e["le"] = None
+        out.append(e)
+    return out
+
+
 def bird_prefix_set(entries, cover=False):
     """Render prefix entries as the body of a BIRD prefix set (comma separated).
 
@@ -244,6 +293,7 @@ def _device_view(d, cfg, errors):
         "hub": cf.get("hub") or None,
         "mesh_ip": _strip(cf.get("mesh_ip")),
         "use_mesh": _bool(cf.get("use_mesh"), role in (ROLE_TRANSIT, ROLE_MON)),
+        "anycast_originate": _bool(cf.get("anycast_originate")),
         "gre_endpoint": _strip(cf.get("gre_endpoint")) or _strip(d.get("primary_ip4")) or _strip(d.get("primary_ip")),
         "short": _short_name(d),
         "rtr_override": [x.strip() for x in str(rtr).split(",") if x.strip()],
@@ -307,7 +357,10 @@ def _session_view(s, cfg, errors, lists):
         errors.append("session %s: import_prefix_list %r not found in NetBox" % (label, imp_list))
         imp_list = None
     max_prefix = _int(cf.get("max_prefix"), cfg["max_prefix"][cls][fk])
-    return {
+    any_std, any_large = _communities(cf.get("anycast_communities"), label, errors)
+    if not 0 <= (_int(cf.get("anycast_prepend"), 0) or 0) <= 5:
+        errors.append("session %s: anycast_prepend must be between 0 and 5" % label)
+    view = {
         "id": s.get("id"),
         "label": label,
         "device": dev,
@@ -336,7 +389,12 @@ def _session_view(s, cfg, errors, lists):
         "irr_as_set": irr_set if irr else None,
         "irr_name": ("IRR_%s_V%d" % (_ident(irr_set), fam)) if irr else None,
         "import_prefix_list": imp_list,
+        "path_asn": _int(cf.get("path_asn"), cfg["path_asn_map"].get(remote_as, remote_as)),
+        "anycast_prepend": _int(cf.get("anycast_prepend"), 0),
+        "anycast_std": any_std,
+        "anycast_large": any_large,
     }
+    return view
 
 
 def _unique_names(sessions):
@@ -508,6 +566,7 @@ def build_model(raw, cfg=None):
 
     # Every device's /48 counts as our own space on every router (so a transit hub may pass an IX
     # router's /48 on) but only the device that owns it originates it.
+    anycast = _anycast_prefixes(raw, own, [ipaddress.ip_network(d['v6_block']) for d in devs.values() if d['v6_block']], errors)
     block_entries = [
         {"prefix": d["v6_block"], "family": 6, "len": 48, "ge": None, "le": None}
         for _, d in sorted(devs.items()) if d["v6_block"]
@@ -559,6 +618,9 @@ def build_model(raw, cfg=None):
             "own_v6": own["6"],
             "block_entries": block_entries,
             "originate_block": d["v6_block"] if is_router else None,
+            "anycast_all_v4": [e for e in anycast if e["family"] == 4],
+            "anycast_all_v6": [e for e in anycast if e["family"] == 6],
+            "originate_anycast": bool(d["anycast_originate"] and is_router and anycast),
             "static_lists": {nm: lists[nm] for nm in sorted({s["import_prefix_list"] for s in enabled if s["import_prefix_list"]})},
             "policy": {k: cfg[k] for k in (
                 "own_asn", "ibgp_bfd", "bfd_interval_ms", "bfd_multiplier", "ospf_hello", "ospf_dead",
@@ -597,6 +659,7 @@ def build_model(raw, cfg=None):
         "nodes": nodes,
         "own": own,
         "irr_sets": irr_sets,
+        "anycast": anycast,
         "monitoring_ips": sorted({d["mgmt_ip"] for d in devs.values() if d["role"] == ROLE_MON and d["mgmt_ip"]}),
         "errors": errors,
     }
@@ -722,6 +785,30 @@ def tunnel_plan(model, name, cfg=None):
     return {"errors": errors, "tunnels": tunnels, "loopbacks": loops, "dummies": dummies, "fou_port": t["fou_port"]}
 
 
+def anycast_watch_config(model, cfg=None):
+    """Settings for scripts/anycast_watch.py: prefixes, our ASN and where each entry AS shows up in paths.
+
+    entries: {path_asn: {"name": ..., "sessions": [{device, label, prepend}]}} built from the transit
+    sessions on routers that originate anycast, so a suggestion can name the exact NetBox session.
+    """
+    cfg = _merge(DEFAULT_POLICY, cfg or {})
+    entries = {}
+    for n in model["order"]:
+        node = model["nodes"][n]
+        if not node["originate_anycast"]:
+            continue
+        for s in node["sessions"]:
+            if s["class"] != "transit":
+                continue
+            e = entries.setdefault(str(s["path_asn"]), {"name": "AS%s" % s["path_asn"], "sessions": []})
+            e["sessions"].append({"device": n, "label": s["label"], "family": s["family"], "prepend": s["anycast_prepend"]})
+    return {
+        "own_asn": cfg["own_asn"],
+        "prefixes": [e["prefix"] for e in model["anycast"]],
+        "entries": entries,
+    }
+
+
 class FilterModule(object):
     def filters(self):
         return {
@@ -732,4 +819,5 @@ class FilterModule(object):
             "bgp_bird_name": bird_name,
             "bgp_strip_mask": strip_mask,
             "bgp_tunnel_plan": tunnel_plan,
+            "bgp_anycast_watch": anycast_watch_config,
         }

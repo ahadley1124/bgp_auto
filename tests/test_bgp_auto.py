@@ -131,6 +131,16 @@ class TunnelPlanTests(unittest.TestCase):
         self.assertTrue(b.tunnel_plan(self.model, "vultr-transit")["errors"])
 
 
+class PathAsnTests(unittest.TestCase):
+    def test_vultr_sessions_default_to_as20473_in_paths(self):
+        raw = json.load(open(os.path.join(os.path.dirname(__file__), "fixtures", "netbox.json")))
+        m = b.build_model(raw, {})
+        s = {x["label"]: x for x in m["nodes"]["vultr-transit"]["sessions"]}
+        self.assertEqual(s["vultr-v4"]["path_asn"], 20473)
+        n = {x["label"]: x for x in m["nodes"]["nl-transit"]["sessions"]}
+        self.assertEqual(n["nl-v4"]["path_asn"], 205941)
+
+
 class V6BlockTests(unittest.TestCase):
     def raw(self):
         raw = json.load(open(os.path.join(os.path.dirname(__file__), "fixtures", "netbox.json")))
