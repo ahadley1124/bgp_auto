@@ -87,6 +87,8 @@ Large communities: `17290:1000:1..5` origin class, `:2000:<device id>`, `:1100:1
 
 ## Running it
 
+Nothing deploys automatically. GitHub Actions only runs read-only checks (tests and `validate.yml`); you run the deploy by hand.
+
 ```
 export NETBOX_URL=... NETBOX_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
 ansible-playbook -i localhost, playbooks/validate.yml          # read-only: render + `bird -p` everything
