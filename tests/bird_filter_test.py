@@ -34,6 +34,16 @@ def to_function(text, name):
     body = re.sub(r"^(\s*)reject;", r"\1return false;", body, flags=re.M)
     return "function %s() -> bool {\n%s}\n" % (name, body)
 
+def normalise(out):
+    """BIRD 2 prints route attributes as `BGP.as_path:` / `BGP.local_pref:`, BIRD 3 as
+    `bgp_path:` / `bgp_local_pref:`. Spell them the BIRD 3 way so the cases match either."""
+    for old, new in (("BGP.as_path:", "bgp_path:"), ("BGP.local_pref:", "bgp_local_pref:"),
+                     ("BGP.large_community:", "bgp_large_community:"),
+                     ("BGP.community:", "bgp_community:"), ("BGP.med:", "bgp_med:")):
+        out = out.replace(old, new)
+    return out
+
+
 def run(node, imp_name, cases, extra_defs=""):
     d = os.path.join(tmp, "r", node, "generated")
     defs = open(os.path.join(d, "00-defs.conf")).read()
@@ -62,7 +72,7 @@ filter T {{
   if {imp_name}() then accept;
   reject;
 }}
-protocol static t {{ ipv4 {{ import filter T; }}; {' '.join(routes)} }}
+protocol static t {{ disabled; ipv4 {{ import filter T; }}; {' '.join(routes)} }}
 """
     path = os.path.join(tmp, node + ".conf")
     open(path, "w").write(conf)
@@ -71,10 +81,26 @@ protocol static t {{ ipv4 {{ import filter T; }}; {' '.join(routes)} }}
     if p.returncode:
         raise SystemExit("config error: " + p.stderr)
     subprocess.check_call(["bird", "-c", path, "-s", sock, "-P", os.path.join(tmp, node + ".pid")])
-    time.sleep(1.0)
-    out = subprocess.run(["birdc", "-s", sock, "show", "route", "all"], capture_output=True, text=True).stdout
+
+    def birdc(*args):
+        return subprocess.run(["birdc", "-s", sock] + list(args), capture_output=True, text=True).stdout
+
+    def wait(predicate, what):
+        for _ in range(100):
+            if predicate():
+                return
+            time.sleep(0.1)
+        raise SystemExit("timed out waiting for %s on %s" % (what, node))
+
+    # BIRD 3 starts protocols in parallel, so the ROA table and the test routes race: a route
+    # evaluated before its ROA has loaded comes out RPKI unknown. `t` is therefore declared
+    # disabled; enable it only once both ROAs are in, so roa_check is deterministic.
+    wait(lambda: birdc("show", "route", "table", "roa_v4").count(" AS") >= 2, "the ROA table")
+    birdc("enable", "t")
+    wait(lambda: re.search(r"^t\s+\S+\s+\S+\s+up\s", birdc("show", "protocols", "t"), re.M), "protocol t")
+    out = birdc("show", "route", "all")
     subprocess.run(["birdc", "-s", sock, "down"], capture_output=True)
-    return out
+    return normalise(out)
 
 fails = 0
 def check(node, imp, cases):
@@ -95,7 +121,7 @@ def check(node, imp, cases):
 
 # Vultr transit: private 64515 is allowed on this session
 check("vultr-transit", "IMP_tr_vultr_v4", [
-    ("8.8.8.0/24",   [64515, 15169],        (True, "(17290, 1100, 1)", "(17290, 1000, 1)", "BGP.local_pref: 100")),
+    ("8.8.8.0/24",   [64515, 15169],        (True, "(17290, 1100, 1)", "(17290, 1000, 1)", "bgp_local_pref: 100")),
     ("1.1.1.0/24",   [64515, 15169],        (False,)),                      # ROA says AS13335 -> RPKI invalid
     ("4.4.0.0/16",   [64515, 3356, 3356],   (True, "(17290, 1100, 2)")),         # no ROA -> unknown -> accepted
     ("10.1.0.0/16",  [64515, 15169],        (False,)),                      # bogon prefix
@@ -107,13 +133,13 @@ check("vultr-transit", "IMP_tr_vultr_v4", [
 ])
 # IX route server: the RS ASN is not in the path; a tier-1 in the path is a leak
 check("vultr-ix1", "IMP_rs_ix1_rs1_v4", [
-    ("4.4.0.0/16",   [15169],               (True, "(17290, 1000, 2)", "BGP.local_pref: 200")),
+    ("4.4.0.0/16",   [15169],               (True, "(17290, 1000, 2)", "bgp_local_pref: 200")),
     ("4.5.0.0/16",   [3356, 15169],         (False,)),                      # tier-1 leak via IX
     ("4.6.0.0/16",   [65001, 15169],        (False,)),                      # private ASN not allowed
 ])
 # Bilateral peer: only what its IRR as-set contains, and bilateral local-pref
 check("vultr-ix1", "IMP_bi_ix1_peer_v4", [
-    ("4.4.0.0/16",   [15169], (True, "(17290, 1000, 3)", "BGP.local_pref: 220")),
+    ("4.4.0.0/16",   [15169], (True, "(17290, 1000, 3)", "bgp_local_pref: 220")),
     ("4.9.0.0/20",   [15169],               (True,)),                       # inside 4.8.0.0/14 le 24
     ("4.12.0.0/16",  [15169],               (False,)),                      # outside the as-set
     ("203.0.113.0/24", [15169],              (False,)),                      # bogon
@@ -121,7 +147,7 @@ check("vultr-ix1", "IMP_bi_ix1_peer_v4", [
 # Export: only our own prefixes that were originated by us, with per-session prepend
 LC = "bgp_large_community.add(LC_LOCAL_ORIGIN);"
 check("nl-transit", "EXP_tr_nl_v4", [
-    ("45.200.0.0/22", [], (True, "BGP.as_path: 17290 17290 17290"), LC),   # NL provider: prepend x3 (+1 added on send)
+    ("45.200.0.0/22", [], (True, "bgp_path: 17290 17290 17290"), LC),   # NL provider: prepend x3 (+1 added on send)
     ("198.18.0.0/22", [], (False,)),                                       # our prefix but not tagged as locally originated
     ("8.8.8.0/24",    [], (False,), LC),                                   # not our prefix
 ])
