@@ -6,8 +6,10 @@ Ansible (see tests/test_bgp_auto.py).
 Topology (hub and spoke, OSPF underlay, loopback iBGP):
 
   * Every router has an IPv4 loopback (and optionally an IPv6 loopback).
-  * Routers are joined by GRE tunnels (carried over Cloudflare Mesh). OSPFv2 and
-    OSPFv3 run over those tunnels and announce the loopbacks.
+  * Routers are joined by GRE tunnels. IX routers have one direct GRE tunnel (public addresses,
+    IP protocol 47) to their hub. The two transit routers have a direct GRE tunnel AND a GRE-in-UDP
+    tunnel over Cloudflare Mesh. OSPFv2 and OSPFv3 run over all of them (direct preferred) and
+    announce the loopbacks.
   * iBGP sessions are loopback to loopback, so they ride on the OSPF routes.
   * The transit routers peer with each other and are both route reflectors.
     Each IX router tunnels to its hub transit router and is that hub's RR client.
@@ -54,8 +56,10 @@ DEFAULT_POLICY = {
     "ospf_hello": 3,
     "ospf_dead": 12,
     "ospf_cost": 10,
+    "ospf_cost_mesh": 20,
     "rtr_port": 3323,
     "gre_ifname_prefix": "gre-",
+    "mesh_ifname_prefix": "grm-",
     "ospf_enabled": True,
 }
 
@@ -239,6 +243,8 @@ def _device_view(d, cfg, errors):
         "primary": _bool(cf.get("bgp_primary")),
         "hub": cf.get("hub") or None,
         "mesh_ip": _strip(cf.get("mesh_ip")),
+        "use_mesh": _bool(cf.get("use_mesh"), role in (ROLE_TRANSIT, ROLE_MON)),
+        "gre_endpoint": _strip(cf.get("gre_endpoint")) or _strip(d.get("primary_ip4")) or _strip(d.get("primary_ip")),
         "short": _short_name(d),
         "rtr_override": [x.strip() for x in str(rtr).split(",") if x.strip()],
         "rpki_validator": cf.get("rpki_validator"),
@@ -500,6 +506,13 @@ def build_model(raw, cfg=None):
     primary = primaries[0] if len(primaries) == 1 else None
     irr_sets = sorted({s["irr_as_set"] for lst in sessions.values() for s in lst if s["enabled"] and s["irr_as_set"]})
 
+    # Every device's /48 counts as our own space on every router (so a transit hub may pass an IX
+    # router's /48 on) but only the device that owns it originates it.
+    block_entries = [
+        {"prefix": d["v6_block"], "family": 6, "len": 48, "ge": None, "le": None}
+        for _, d in sorted(devs.items()) if d["v6_block"]
+    ]
+
     nodes = {}
     for n, d in devs.items():
         rank = _rank(d)
@@ -521,11 +534,18 @@ def build_model(raw, cfg=None):
                     "p6": "ibgp6_" + _ident(p["peer"]),
                     "required": _rank(pd) < rank,
                 })
-                tunnels.append({
-                    "peer": p["peer"],
-                    "ifname": cfg["gre_ifname_prefix"] + pd["short"],
-                    "leader": n < p["peer"],
-                })
+                for kind in ("direct", "mesh"):
+                    if kind == "mesh" and not (d["use_mesh"] and pd["use_mesh"]):
+                        continue
+                    pre = cfg["gre_ifname_prefix"] if kind == "direct" else cfg["mesh_ifname_prefix"]
+                    tunnels.append({
+                        "peer": p["peer"],
+                        "kind": kind,
+                        "ifname": pre + pd["short"],
+                        "leader": n < p["peer"],
+                    })
+                if not d["gre_endpoint"] or not pd["gre_endpoint"]:
+                    errors.append("%s<->%s: direct GRE needs a primary IPv4 (or gre_endpoint) on both devices" % (n, p["peer"]))
         want_originate = d["originate"] if d["originate"] is not None else d["primary"]
         node = dict(d)
         node.update({
@@ -537,10 +557,12 @@ def build_model(raw, cfg=None):
             "originate": _bool(want_originate) and is_router,
             "own_v4": own["4"],
             "own_v6": own["6"],
+            "block_entries": block_entries,
+            "originate_block": d["v6_block"] if is_router else None,
             "static_lists": {nm: lists[nm] for nm in sorted({s["import_prefix_list"] for s in enabled if s["import_prefix_list"]})},
             "policy": {k: cfg[k] for k in (
                 "own_asn", "ibgp_bfd", "bfd_interval_ms", "bfd_multiplier", "ospf_hello", "ospf_dead",
-                "ospf_cost", "rtr_port", "ospf_enabled")},
+                "ospf_cost", "ospf_cost_mesh", "rtr_port", "ospf_enabled")},
         })
         # RPKI: transit routers run their own validator, others use the hub's.
         want_val = d["rpki_validator"]
@@ -561,6 +583,10 @@ def build_model(raw, cfg=None):
         else:
             servers = []
         node["rtr_servers"] = servers if is_router else []
+        # Exporters listen on the mesh address when the node is on the mesh, otherwise on its public
+        # address, and then a firewall rule restricts them to the monitoring VMs.
+        node["exporter_addr"] = (d["mesh_ip"] if d["use_mesh"] else d["mgmt_ip"]) or None
+        node["exporter_restricted"] = not d["use_mesh"]
         node["has_ebgp"] = bool(enabled)
         nodes[n] = node
 
@@ -571,6 +597,7 @@ def build_model(raw, cfg=None):
         "nodes": nodes,
         "own": own,
         "irr_sets": irr_sets,
+        "monitoring_ips": sorted({d["mgmt_ip"] for d in devs.values() if d["role"] == ROLE_MON and d["mgmt_ip"]}),
         "errors": errors,
     }
 
@@ -631,9 +658,12 @@ def strip_mask(addr):
 
 
 TUNNEL_DEFAULTS = {
-    "pool": "10.255.0.0/17",      # one /31 per router pair, derived from the NetBox device ids
-    "mtu": 1240,                  # Cloudflare Mesh path (~1280) minus GRE+UDP overhead
-    "encap": "fou",               # GRE in UDP; Mesh only forwards TCP/UDP/ICMP. "gre" = raw GRE
+    "pool": "10.255.0.0/17",       # direct GRE: one /31 per router pair, derived from the NetBox device ids
+    "pool_mesh": "10.254.0.0/17",  # mesh GRE: same scheme, separate range so a pair can have both tunnels
+    "mtu": 1476,                   # direct GRE over a 1500 byte path
+    "mtu_mesh": 1240,              # Cloudflare Mesh path (~1280) minus GRE+UDP overhead
+    "encap": "gre",                # direct tunnels: raw GRE (IP protocol 47)
+    "encap_mesh": "fou",           # mesh tunnels: GRE in UDP, Mesh only forwards TCP/UDP/ICMP ("gre" to test raw)
     "fou_port": 5555,
     "ttl": 255,
 }
@@ -644,18 +674,27 @@ def tunnel_plan(model, name, cfg=None):
 
     Tunnel /31s are derived from the two device ids, so adding a router never
     renumbers an existing tunnel (device ids must be below 128).
-    Returns {"errors": [...], "tunnels": [...], "loopbacks": [...], "fou_port": N}.
+    Direct tunnels run between the devices' public addresses (gre_endpoint, default the primary IPv4),
+    mesh tunnels between their Cloudflare Mesh addresses.
+    Returns {"errors": [...], "tunnels": [...], "loopbacks": [...], "dummies": [...], "fou_port": N}.
     """
     t = _merge(TUNNEL_DEFAULTS, cfg or {})
     node = model["nodes"][name]
-    pool = ipaddress.ip_network(t["pool"])
     errors, tunnels = [], []
-    if not node.get("mesh_ip"):
-        errors.append("%s: mesh_ip not set yet (the mesh play fills it in)" % name)
     for tun in node["tunnels"]:
         peer = model["nodes"][tun["peer"]]
-        if not peer.get("mesh_ip"):
-            errors.append("%s: peer %s has no mesh_ip" % (name, peer["name"]))
+        mesh = tun["kind"] == "mesh"
+        if mesh:
+            local, remote = node.get("mesh_ip"), peer.get("mesh_ip")
+            if not local:
+                errors.append("%s: mesh_ip not set yet (the mesh play fills it in)" % name)
+            if not remote:
+                errors.append("%s: peer %s has no mesh_ip" % (name, peer["name"]))
+        else:
+            local, remote = node.get("gre_endpoint"), peer.get("gre_endpoint")
+            if not local or not remote:
+                errors.append("%s<->%s: no public address for the direct tunnel" % (name, peer["name"]))
+        pool = ipaddress.ip_network(t["pool_mesh"] if mesh else t["pool"])
         lo, hi = sorted((node["id"], peer["id"]))
         if hi >= 128:
             errors.append("%s<->%s: device ids must be below 128 for tunnel addressing" % (name, peer["name"]))
@@ -666,9 +705,10 @@ def tunnel_plan(model, name, cfg=None):
             continue
         mine = base if node["id"] == lo else base + 1
         tunnels.append({
-            "name": tun["ifname"], "peer": peer["name"],
-            "local": node.get("mesh_ip"), "remote": peer.get("mesh_ip"),
-            "encap": t["encap"], "encap_port": t["fou_port"], "ttl": t["ttl"], "mtu": t["mtu"],
+            "name": tun["ifname"], "peer": peer["name"], "kind": tun["kind"],
+            "local": local, "remote": remote,
+            "encap": t["encap_mesh"] if mesh else t["encap"], "encap_port": t["fou_port"], "ttl": t["ttl"],
+            "mtu": t["mtu_mesh"] if mesh else t["mtu"],
             "addresses": ["%s/31" % ipaddress.ip_address(mine)],
         })
     loops = []

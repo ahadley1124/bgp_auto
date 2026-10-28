@@ -15,6 +15,12 @@ protocol ospf v2 ospf4 {
             hello {{ node.policy.ospf_hello }};
             dead {{ node.policy.ospf_dead }};
         };
+        interface "{{ mesh_ifname_prefix }}*" {
+            type ptp;
+            cost {{ node.policy.ospf_cost_mesh }};
+            hello {{ node.policy.ospf_hello }};
+            dead {{ node.policy.ospf_dead }};
+        };
     };
 }
 {% if node.loopback6 or node.mgmt_net %}
@@ -35,6 +41,12 @@ protocol ospf v3 ospf6 {
         interface "{{ gre_ifname_prefix }}*" {
             type ptp;
             cost {{ node.policy.ospf_cost }};
+            hello {{ node.policy.ospf_hello }};
+            dead {{ node.policy.ospf_dead }};
+        };
+        interface "{{ mesh_ifname_prefix }}*" {
+            type ptp;
+            cost {{ node.policy.ospf_cost_mesh }};
             hello {{ node.policy.ospf_hello }};
             dead {{ node.policy.ospf_dead }};
         };

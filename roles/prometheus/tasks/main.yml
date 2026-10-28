@@ -5,13 +5,13 @@
 - name: Load the model
   ansible.builtin.set_fact:
     prom_node: "{{ hostvars['localhost'].bgp_model_data.nodes[inventory_hostname] }}"
-    prom_nodes: "{{ hostvars['localhost'].bgp_model_data.nodes.values() | selectattr('mesh_ip') | sort(attribute='rank') | list }}"
+    prom_nodes: "{{ hostvars['localhost'].bgp_model_data.nodes.values() | selectattr('exporter_addr') | sort(attribute='rank') | list }}"
   no_log: true
 
 - name: Stop if the mesh address is unknown
   ansible.builtin.fail:
-    msg: "{{ inventory_hostname }} has no mesh_ip yet"
-  when: not prom_node.mesh_ip
+    msg: "{{ inventory_hostname }} uses the mesh but has no mesh_ip yet"
+  when: prom_node.use_mesh and not prom_node.mesh_ip
 
 - name: Install Prometheus
   ansible.builtin.apt:
@@ -36,13 +36,13 @@
     validate: promtool check config %s
   notify: restart prometheus
 
-- name: Listen on the mesh address only
+- name: Listen on the mesh address only (localhost when this VM is not on the mesh)
   ansible.builtin.copy:
     dest: /etc/default/prometheus
     mode: "0644"
     content: |
       # {{ ansible_managed }}
-      ARGS="--web.listen-address={{ prom_node.mesh_ip }}:{{ prometheus_port }} --storage.tsdb.retention.time={{ prometheus_retention }}"
+      ARGS="--web.listen-address={{ prom_node.mesh_ip if prom_node.use_mesh else '127.0.0.1' }}:{{ prometheus_port }} --storage.tsdb.retention.time={{ prometheus_retention }}"
   notify: restart prometheus
 
 - name: Prometheus enabled and running

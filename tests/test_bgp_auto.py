@@ -177,3 +177,49 @@ class V6BlockTests(unittest.TestCase):
         self.setCF(raw, "vultr-ix1", ipv6_block="2001:db8:5001::/48")
         plan = b.tunnel_plan(b.build_model(raw, {}), "vultr-ix1")
         self.assertEqual(plan["dummies"], [{"name": "mgmt0", "addresses": ["2001:db8:5001::1/64"]}])
+
+
+class DirectAndMeshTunnelTests(unittest.TestCase):
+    def setUp(self):
+        raw = json.load(open(os.path.join(os.path.dirname(__file__), "fixtures", "netbox.json")))
+        for i, d in enumerate(raw["devices"]):
+            d["custom_fields"]["mesh_ip"] = "100.96.0.%d/32" % (10 + i)
+        self.model = b.build_model(raw, {})
+
+    def test_transit_pair_has_direct_and_mesh(self):
+        plan = b.tunnel_plan(self.model, "vultr-transit")
+        to_nl = [t for t in plan["tunnels"] if t["peer"] == "nl-transit"]
+        self.assertEqual(sorted(t["kind"] for t in to_nl), ["direct", "mesh"])
+        direct = [t for t in to_nl if t["kind"] == "direct"][0]
+        mesh = [t for t in to_nl if t["kind"] == "mesh"][0]
+        self.assertEqual((direct["encap"], direct["name"]), ("gre", "gre-nl"))
+        self.assertEqual((mesh["encap"], mesh["name"]), ("fou", "grm-nl"))
+        self.assertTrue(direct["addresses"][0].startswith("10.255."))
+        self.assertTrue(mesh["addresses"][0].startswith("10.254."))
+        self.assertEqual(direct["local"], "203.0.113.10")
+
+    def test_ix_router_has_only_a_direct_tunnel_and_needs_no_mesh(self):
+        node = self.model["nodes"]["vultr-ix1"]
+        self.assertFalse(node["use_mesh"])
+        self.assertEqual([t["kind"] for t in node["tunnels"]], ["direct"])
+        self.assertTrue(self.model["nodes"]["vultr-transit"]["use_mesh"])
+        self.assertTrue(self.model["nodes"]["mon-vultr"]["use_mesh"])
+
+    def test_ix_plan_works_without_a_mesh_ip(self):
+        self.model["nodes"]["vultr-ix1"]["mesh_ip"] = None
+        self.assertEqual(b.tunnel_plan(self.model, "vultr-ix1")["errors"], [])
+
+    def test_direct_needs_public_address(self):
+        raw = json.load(open(os.path.join(os.path.dirname(__file__), "fixtures", "netbox.json")))
+        for d in raw["devices"]:
+            if d["name"] == "vultr-ix1":
+                d["primary_ip4"] = None
+        self.assertIn("direct GRE needs", " ".join(b.build_model(raw, {})["errors"]))
+
+    def test_exporters_follow_mesh_or_public(self):
+        n = self.model["nodes"]
+        self.assertEqual(n["vultr-transit"]["exporter_addr"], n["vultr-transit"]["mesh_ip"])
+        self.assertFalse(n["vultr-transit"]["exporter_restricted"])
+        self.assertEqual(n["vultr-ix1"]["exporter_addr"], n["vultr-ix1"]["mgmt_ip"])
+        self.assertTrue(n["vultr-ix1"]["exporter_restricted"])
+        self.assertEqual(self.model["monitoring_ips"], [n["mon-vultr"]["mgmt_ip"]])

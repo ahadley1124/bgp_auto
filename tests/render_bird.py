@@ -35,7 +35,7 @@ for name, node in model["nodes"].items():
     irr_text, irr_empty = b.irr_defines(irr_data, node["sessions"])
     uses_bfd = node["policy"]["ibgp_bfd"] or any(s["bfd"] for s in node["sessions"])
     ctx = dict(node=node, bird_conf_root=out, ansible_managed="Ansible managed",
-               bird_tier1_asns=tier1, gre_ifname_prefix="gre-", irr_text=irr_text,
+               bird_tier1_asns=tier1, gre_ifname_prefix="gre-", mesh_ifname_prefix="grm-", irr_text=irr_text,
                irr_empty=irr_empty, bird_uses_bfd=uses_bfd)
     files = {"bird.conf": "bird.conf.j2"}
     for fn in ["00-defs", "10-rpki", "20-filters", "25-prefix-sets", "30-base", "40-ospf", "50-ibgp", "60-originate", "70-ebgp", "80-bfd"]:

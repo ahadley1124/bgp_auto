@@ -1,19 +1,25 @@
 ---
-# Exporters listen on the Cloudflare Mesh address only, so the monitoring VM reaches them
-# through the mesh and nothing is exposed on the public interface.
+# Exporters listen on the Cloudflare Mesh address on mesh nodes. Nodes without the mesh (the IX
+# routers) listen on their public address and an nftables rule drops everything but the monitoring
+# VM(s). The rule lives in its own table, so it cannot lock out ssh or touch other firewall rules.
 - name: Load this host's model
   ansible.builtin.set_fact:
     exp_node: "{{ hostvars['localhost'].bgp_model_data.nodes[inventory_hostname] }}"
   no_log: true
 
-- name: Stop if the mesh address is unknown
+- name: Stop if there is no address to listen on
   ansible.builtin.fail:
-    msg: "{{ inventory_hostname }} has no mesh_ip yet; the mesh role must run first"
-  when: not exp_node.mesh_ip
+    msg: "{{ inventory_hostname }} has no exporter address (mesh_ip not recorded yet, or no primary IPv4)"
+  when: not exp_node.exporter_addr
+
+- name: Stop if a public exporter has no monitoring source to allow
+  ansible.builtin.fail:
+    msg: "{{ inventory_hostname }} exposes exporters on its public address but no monitoring VM with a primary IPv4 exists in NetBox"
+  when: exp_node.exporter_restricted and hostvars['localhost'].bgp_model_data.monitoring_ips | length == 0
 
 - name: Install the exporters
   ansible.builtin.apt:
-    name: "{{ ['prometheus-node-exporter'] + (['prometheus-bird-exporter'] if exp_node.is_router else []) }}"
+    name: "{{ ['prometheus-node-exporter'] + (['prometheus-bird-exporter'] if exp_node.is_router else []) + (['nftables'] if exp_node.exporter_restricted else []) }}"
     state: present
     update_cache: true
   when: not ansible_check_mode
@@ -24,7 +30,7 @@
     mode: "0644"
     content: |
       # {{ ansible_managed }}
-      ARGS="--web.listen-address={{ exp_node.mesh_ip }}:{{ exporter_node_port }} --collector.systemd"
+      ARGS="--web.listen-address={{ exp_node.exporter_addr }}:{{ exporter_node_port }} --collector.systemd"
   notify: restart node exporter
 
 - name: BIRD exporter arguments
@@ -33,7 +39,7 @@
     mode: "0644"
     content: |
       # {{ ansible_managed }}
-      ARGS="-web.listen-address={{ exp_node.mesh_ip }}:{{ exporter_bird_port }} -bird.v2 -bird.socket={{ exporter_bird_socket }} -format.new=true"
+      ARGS="-web.listen-address={{ exp_node.exporter_addr }}:{{ exporter_bird_port }} -bird.v2 -bird.socket={{ exporter_bird_socket }} -format.new=true"
   when: exp_node.is_router
   notify: restart bird exporter
 
@@ -44,3 +50,50 @@
     enabled: true
   loop: "{{ ['prometheus-node-exporter'] + (['prometheus-bird-exporter'] if exp_node.is_router else []) }}"
   when: not ansible_check_mode
+
+- name: Restrict public exporters to the monitoring VM(s)
+  when: exp_node.exporter_restricted and not ansible_check_mode
+  block:
+    - name: Firewall rules for the exporters
+      ansible.builtin.copy:
+        dest: "{{ bgp_auto_dir | default('/etc/bgp-auto') }}/exporters.nft"
+        mode: "0640"
+        content: |
+          # {{ ansible_managed }}
+          table inet bgp_auto_exporters
+          delete table inet bgp_auto_exporters
+          table inet bgp_auto_exporters {
+            chain input {
+              type filter hook input priority -10; policy accept;
+              tcp dport { {{ exporter_node_port }}, {{ exporter_bird_port }} } ip saddr != { {{ hostvars['localhost'].bgp_model_data.monitoring_ips | join(', ') }} } drop
+            }
+          }
+      register: exporters_nft
+
+    - name: Load the rules now
+      ansible.builtin.command:
+        argv: [nft, -f, "{{ bgp_auto_dir | default('/etc/bgp-auto') }}/exporters.nft"]
+      changed_when: exporters_nft.changed
+
+    - name: Load the rules at boot
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/bgp-auto-exporters-fw.service
+        mode: "0644"
+        content: |
+          # {{ ansible_managed }}
+          [Unit]
+          Description=bgp_auto exporter firewall
+          After=network-pre.target
+          Before=network.target
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/usr/sbin/nft -f {{ bgp_auto_dir | default('/etc/bgp-auto') }}/exporters.nft
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable the firewall unit
+      ansible.builtin.systemd:
+        name: bgp-auto-exporters-fw.service
+        enabled: true
+        daemon_reload: true

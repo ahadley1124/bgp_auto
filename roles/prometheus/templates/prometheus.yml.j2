@@ -10,12 +10,12 @@ scrape_configs:
   - job_name: node
     static_configs:
 {% for n in prom_nodes %}
-      - targets: ["{{ n.mesh_ip }}:{{ exporter_node_port }}"]
+      - targets: ["{{ n.exporter_addr }}:{{ exporter_node_port }}"]
         labels: {instance: "{{ n.name }}", site: "{{ n.site or '' }}", role: "{{ n.role }}"}
 {% endfor %}
   - job_name: bird
     static_configs:
 {% for n in prom_nodes if n.is_router %}
-      - targets: ["{{ n.mesh_ip }}:{{ exporter_bird_port }}"]
+      - targets: ["{{ n.exporter_addr }}:{{ exporter_bird_port }}"]
         labels: {instance: "{{ n.name }}", site: "{{ n.site or '' }}", role: "{{ n.role }}"}
 {% endfor %}

@@ -89,6 +89,20 @@
     },
     {
       "object": "dcim.device",
+      "name": "use_mesh",
+      "type": "boolean",
+      "label": "On the Cloudflare Mesh",
+      "description": "Default: transit routers and monitoring yes, IX routers no. Two mesh nodes get a second (mesh) GRE tunnel"
+    },
+    {
+      "object": "dcim.device",
+      "name": "gre_endpoint",
+      "type": "text",
+      "label": "GRE endpoint IPv4",
+      "description": "Public address for direct GRE tunnels. Default: the device's primary IPv4"
+    },
+    {
+      "object": "dcim.device",
       "name": "ipv6_block",
       "type": "text",
       "label": "IPv6 /48",

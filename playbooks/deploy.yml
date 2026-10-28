@@ -2,10 +2,10 @@
 # Staged BGP rollout, driven entirely by NetBox.
 #
 #   0. localhost  read NetBox, build and validate the model, decide the rollout order
-#   1. all nodes  join the Cloudflare Mesh (in parallel; records mesh_ip in NetBox)
+#   1. mesh nodes join the Cloudflare Mesh (in parallel; records mesh_ip in NetBox). IX routers do not.
 #   2. localhost  re-read NetBox so the new mesh addresses are in the model
 #   3. routers    ONE AT A TIME, primary Vultr transit first, then the other transit, then IX
-#                 routers: tunnels, RPKI validator, BIRD (validate -> apply -> health -> confirm
+#                 routers: tunnels (direct GRE, plus GRE over the mesh between the transits), RPKI validator, BIRD (validate -> apply -> health -> confirm
 #                 or roll back), exporters. Any failure stops the rollout before the next router.
 #   4. monitoring Prometheus on the monitoring VM
 #   5. legacy     hosts that are not managed above keep the old bird + gre roles
@@ -47,15 +47,18 @@
       tags: always
       ansible.builtin.add_host:
         name: "{{ item }}"
-        groups: "{{ ['bgp_managed'] + (['bgp_routers'] if bgp_model_data.nodes[item].is_router else ['bgp_monitoring']) }}"
+        groups: >-
+          {{ ['bgp_managed']
+             + (['bgp_routers'] if bgp_model_data.nodes[item].is_router else ['bgp_monitoring'])
+             + (['bgp_mesh'] if bgp_model_data.nodes[item].use_mesh else []) }}
         ansible_host: "{{ bgp_model_data.nodes[item].mgmt_ip | default(omit) }}"
         ansible_user: "{{ bgp_model_data.nodes[item].ansible_user | default(omit) }}"
         ansible_connection: "{{ 'local' if item == lookup('ansible.builtin.env', 'BGP_AUTO_LOCAL_MACHINE') else (bgp_connection | default('ssh')) }}"
       loop: "{{ bgp_selected }}"
       changed_when: false
 
-- name: Join the Cloudflare Mesh
-  hosts: bgp_managed
+- name: Join the Cloudflare Mesh (transit routers and monitoring only)
+  hosts: bgp_mesh
   become: true
   gather_facts: true
   gather_subset: [min]

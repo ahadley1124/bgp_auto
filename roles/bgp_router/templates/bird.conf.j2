@@ -13,7 +13,7 @@ include "generated/25-prefix-sets.conf";
 include "generated/30-base.conf";
 include "generated/40-ospf.conf";
 include "generated/50-ibgp.conf";
-{% if node.originate %}
+{% if node.originate or node.originate_block %}
 include "generated/60-originate.conf";
 {% endif %}
 {% if node.sessions %}

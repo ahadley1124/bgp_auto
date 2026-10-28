@@ -151,3 +151,36 @@ class NetboxFetchTests(unittest.TestCase):
         self.assertEqual(d["nl-transit"]["custom_fields"]["mesh_ip"], "100.96.0.9/32")
     def test_probe(self):
         p = self.run_script("probe"); self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+
+class BlockAnnouncementTests(unittest.TestCase):
+    """An IX router originates its own /48 (and not the aggregates); transits accept it as our space."""
+    def test_render(self):
+        if not __import__("shutil").which("bird"):
+            self.skipTest("needs bird")
+        with tempfile.TemporaryDirectory() as d:
+            raw = json.load(open(os.path.join(HERE, "fixtures", "netbox.json")))
+            for dev in raw["devices"]:
+                if dev["name"] == "vultr-ix1":
+                    dev["custom_fields"]["ipv6_block"] = "2001:db8:5001::/48"
+                if dev["name"] == "nl-ix1":
+                    dev["custom_fields"]["ipv6_block"] = "2001:db8:5002::/48"
+            fx = os.path.join(d, "fx.json"); json.dump(raw, open(fx, "w"))
+            out = os.path.join(d, "out")
+            subprocess.check_call([sys.executable, os.path.join(HERE, "render_bird.py"), out, "--fixture", fx,
+                                   "--irr-json", os.path.join(HERE, "fixtures", "irr.json")], stdout=subprocess.DEVNULL)
+            ix = open(os.path.join(out, "vultr-ix1", "generated", "60-originate.conf")).read()
+            self.assertIn("route 2001:db8:5001::/48 blackhole;", ix)
+            self.assertNotIn("2001:db8:5000::/36 blackhole", ix, "IX routers must not originate the aggregates")
+            self.assertNotIn("2001:db8:5002::/48", ix)
+            prim = open(os.path.join(out, "vultr-transit", "generated", "60-originate.conf")).read()
+            self.assertIn("2001:db8:5000::/36 blackhole", prim)
+            self.assertNotIn("5001::/48 blackhole", prim, "the hub must not blackhole an IX router's /48")
+            defs = open(os.path.join(out, "vultr-transit", "generated", "00-defs.conf")).read()
+            self.assertIn("2001:db8:5001::/48", defs)
+            self.assertIn("2001:db8:5002::/48", defs)
+            main = open(os.path.join(out, "vultr-ix1", "bird.conf")).read()
+            self.assertIn("60-originate.conf", main)
+            for host in os.listdir(out):
+                p = subprocess.run(["bird", "-p", "-c", os.path.join(out, host, "bird.conf")], capture_output=True, text=True, cwd="/")
+                self.assertEqual(p.returncode, 0, host + ": " + p.stderr)

@@ -5,20 +5,27 @@ AS17290, IPv4 and IPv6. NetBox is the only place you edit; Ansible turns it into
 ## Shape
 
 ```
-        Cloudflare Mesh (100.96.0.0/12), GRE-in-UDP tunnels, OSPF, loopback iBGP
- 
- Vultr transit (PRIMARY, RR) <------- iBGP ------->  NL transit (RR)
-   | eBGP Vultr (AS64515)                              | eBGP AS205941
-   +-- IX VM(s) (RR clients)                           +-- IX VM(s) (RR clients)
- Monitoring VM (Prometheus) scrapes everything over the mesh
+ Vultr transit (PRIMARY, RR) <== direct GRE + GRE over Cloudflare Mesh ==> NL transit (RR)
+   | eBGP Vultr (AS64515)                                                  | eBGP AS205941
+   +-- IX VM(s): direct GRE to this hub (RR clients)                       +-- IX VM(s): direct GRE to this hub
+ Monitoring VM (Prometheus): on the mesh, scrapes the transits over it and the IX VMs on their public address
 ```
 
-* Each router has an IPv4 (and optional IPv6) loopback. OSPFv2/v3 run over the `gre-*` tunnels and
+* Each router has an IPv4 (and optional IPv6) loopback. OSPFv2/v3 run over every tunnel and
   announce the loopbacks; iBGP runs loopback to loopback, so it follows OSPF.
+* **IX VM to its hub:** one direct GRE tunnel (`gre-<short>`, raw GRE, IP protocol 47) between the two
+  public addresses. No Cloudflare Mesh on IX VMs.
+* **Hub to hub (the two transit routers):** a direct GRE tunnel (`gre-<short>`, OSPF cost 10) and a second
+  GRE-in-UDP tunnel over the Mesh (`grm-<short>`, cost 20), so OSPF prefers the direct path and the Mesh one
+  is the fallback. Only nodes with `use_mesh` (transit routers and monitoring by default) join the Mesh.
 * The two transit routers are route reflectors for their own IX routers and peer with each other.
-  An IX router tunnels only to its `hub`.
 * Own prefixes are originated only on the primary (static blackhole routes, tagged with the
   local-origin large community) and only that tag is exported to eBGP.
+
+Firewalls: every router must allow IP protocol 47 (GRE) from the peer's public address. Tunnel endpoints are
+the device's primary IPv4 unless `gre_endpoint` is set (use it if the VM sits behind NAT, which raw GRE
+does not survive). Tunnel /31s come from `10.255.0.0/17` (direct) and `10.254.0.0/17` (mesh), derived from
+the two device ids; change the pools with `bgp_tunnel` if they collide with something of yours.
 
 ## IPv6 per VM
 
@@ -28,7 +35,12 @@ network: the router gets `<that /64>::1` on a dummy interface `mgmt0`, and OSPFv
 router can reach it. VMs inside the same IX use addresses from that /64: set `mgmt_parent` (the IX router's
 device name) and `mgmt_ipv6` (an address inside the parent's management /64). Only routers get `mgmt0`
 configured by these playbooks; configuring the addresses on the other VMs is not automated yet.
-The rest of the /48 is left for you to use; it is not announced separately (your aggregate covers it).
+The router also **announces its /48** (a blackhole route tagged as locally originated, so the management /64 and
+any /64 you put on a local interface stay more specific). It goes to that router's IX peers and, through iBGP and
+the hub, to the transits, so someone outside can reach the VM's management over the IX path instead of entering
+at Vultr and coming back. Every router treats all the /48s as our own space, so a hub passes an IX router's /48
+on but never originates it, and the /48 learned back from an IX peer is rejected as our own space. The rest of the
+/48 is dropped on the owning router until you route it somewhere.
 
 ## Policy
 
@@ -73,15 +85,15 @@ and the rollout stops before the next router. A run with no NetBox change does n
 2. `scripts/netbox_fetch.py probe` checks the netbox_bgp endpoints and field names (not verified here).
 3. Seed NetBox: devices, the Vultr session (AS64515, multihop, MD5 password, `neighbor_interface` if needed),
    the NL sessions (IPs, password), prefix lists `OWN-V4` / `OWN-V6`, IX sessions.
-4. Cloudflare: Mesh enabled, device profile = split tunnel **include** `100.96.0.0/12` only, API token.
-5. Each VM needs 3+ vCPU for the Mesh client and about 4 GB RAM for two full tables.
+4. Cloudflare (transit routers and monitoring only): Mesh enabled, device profile = split tunnel **include** `100.96.0.0/12` only, API token.
+5. The VMs on the Mesh need 3+ vCPU for the client; every router needs about 4 GB RAM for two full tables.
 
 ## Not verified here
 
 Only config syntax (BIRD 2.14), filter behaviour, the Ansible flow (fake NetBox, fake birdc) and the
 tunnel logic (fake `ip`) were tested. These need a real look on first deploy: netbox_bgp API paths, how
 BIRD 3 and bird_exporter get on, Cloudflare Mesh with GRE-in-UDP (and whether it leaves the BIRD routes
-alone), the Vultr BGP specifics, the Routinator apt repo and the bgpq4 JSON format.
+alone), raw GRE between the Vultr and NL public addresses, the Vultr BGP specifics, the Routinator apt repo and the bgpq4 JSON format.
 
 ## Tests
 
