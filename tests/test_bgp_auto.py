@@ -174,6 +174,25 @@ class V6BlockTests(unittest.TestCase):
         self.assertIn("not inside the own IPv6 prefixes", errs)
         self.assertIn("overlapping", errs)
 
+    def addReassigned(self, raw, prefix):
+        raw["prefix_lists"].append({"id": 9, "name": "REASSIGNED", "family": {"value": 6}})
+        raw["prefix_list_rules"].append({"id": 99, "index": 10, "action": "permit",
+            "prefix_list": {"id": 9, "name": "REASSIGNED"}, "prefix": None,
+            "prefix_custom": prefix, "ge": None, "le": None})
+
+    def test_reassigned_prefix_is_excluded(self):
+        raw = self.raw()
+        self.addReassigned(raw, "2001:db8:5ffe::/48")
+        self.setCF(raw, "vultr-ix1", ipv6_block="2001:db8:5001::/48")
+        m = b.build_model(raw, {})
+        self.assertEqual(m["errors"], [])
+        self.assertEqual(m["nodes"]["vultr-ix1"]["reassigned_v6"][0]["prefix"], "2001:db8:5ffe::/48")
+        self.setCF(raw, "nl-ix1", ipv6_block="2001:db8:5ffe::/48")
+        self.assertIn("overlaps reassigned", " ".join(b.build_model(raw, {})["errors"]))
+        raw2 = self.raw()
+        self.addReassigned(raw2, "2001:db9::/48")
+        self.assertIn("not inside our own", " ".join(b.build_model(raw2, {})["errors"]))
+
     def test_child_must_be_inside_parent_net(self):
         raw = self.raw()
         self.setCF(raw, "vultr-ix1", ipv6_block="2001:db8:5001::/48")

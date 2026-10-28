@@ -38,3 +38,7 @@ define OWN_COVER_V4 = [ {{ (node.own_v4 + node.anycast_all_v4) | bgp_prefix_set(
 define ANYCAST_V4   = [ {{ node.anycast_all_v4 | bgp_prefix_set or '255.255.255.255/32' }} ];
 define ANYCAST_V6   = [ {{ node.anycast_all_v6 | bgp_prefix_set or '::/128' }} ];
 define OWN_COVER_V6 = [ {{ (node.own_v6 + node.block_entries + node.anycast_all_v6) | bgp_prefix_set(true) or '::/128' }} ];
+
+# Space inside our aggregates that belongs to someone else: never ours, so never filtered as ours.
+define REASSIGNED_V4 = [ {{ node.reassigned_v4 | bgp_prefix_set(true) or '255.255.255.255/32' }} ];
+define REASSIGNED_V6 = [ {{ node.reassigned_v6 | bgp_prefix_set(true) or '::/128' }} ];

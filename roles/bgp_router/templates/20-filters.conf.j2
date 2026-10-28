@@ -20,16 +20,16 @@ function bad_prefix_len() -> bool {
 
 function is_own_space() -> bool {
     case net.type {
-        NET_IP4: return net ~ OWN_COVER_V4;
-        NET_IP6: return net ~ OWN_COVER_V6;
+        NET_IP4: return net ~ OWN_COVER_V4 && !(net ~ REASSIGNED_V4);
+        NET_IP6: return net ~ OWN_COVER_V6 && !(net ~ REASSIGNED_V6);
         else: return false;
     }
 }
 
 function is_own_announcement() -> bool {
     case net.type {
-        NET_IP4: return net ~ OWN_V4;
-        NET_IP6: return net ~ OWN_V6;
+        NET_IP4: return net ~ OWN_V4 && !(net ~ REASSIGNED_V4);
+        NET_IP6: return net ~ OWN_V6 && !(net ~ REASSIGNED_V6);
         else: return false;
     }
 }

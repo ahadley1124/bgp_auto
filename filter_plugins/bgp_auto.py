@@ -34,6 +34,9 @@ DEFAULT_POLICY = {
     "path_asn_map": {64515: 20473},   # Vultr sessions are AS64515 but paths show AS20473
     "own_prefix_lists": {"4": "OWN-V4", "6": "OWN-V6"},
     "own_prefix_tag": "bgp-originate",
+    # Prefix list of space inside our aggregates that is reassigned to someone else (e.g. a friend's /48).
+    # Never originated, never treated as own space, never usable for a VM /48 or anycast.
+    "reassigned_prefix_list": "REASSIGNED",
     "device_statuses": ["active"],
     "local_pref": {"customer": 300, "ix-bilateral": 220, "ix-rs": 200, "transit": 100},
     "max_prefix": {
@@ -175,6 +178,19 @@ def _collect_prefix_lists(raw, errors):
     return lists
 
 
+def _check_reassigned(own, reassigned, errors):
+    """A reassigned prefix must sit inside our space; an own entry may not be the reassigned prefix itself."""
+    for r in reassigned:
+        net = ipaddress.ip_network(r["prefix"], strict=False)
+        fam = str(net.version)
+        if not any(net.subnet_of(ipaddress.ip_network(o["prefix"], strict=False)) for o in own[fam]):
+            errors.append("reassigned prefix %s is not inside our own prefixes" % net)
+        for o in own[fam]:
+            onet = ipaddress.ip_network(o["prefix"], strict=False)
+            if onet.subnet_of(net):
+                errors.append("own prefix %s is inside the reassigned prefix %s" % (onet, net))
+
+
 def _own_prefixes(raw, cfg, lists, errors):
     own = {"4": [], "6": []}
     for fam in ("4", "6"):
@@ -214,7 +230,7 @@ def _communities(text, label, errors):
     return std, large
 
 
-def _anycast_prefixes(raw, own, blocks, errors):
+def _anycast_prefixes(raw, own, blocks, errors, reassigned=()):
     """Anycast prefixes: IPAM prefixes tagged bgp-anycast. Originated by devices with anycast_originate."""
     out = []
     own_nets = [ipaddress.ip_network(e["prefix"], strict=False) for fam in ("4", "6") for e in own[fam]]
@@ -232,6 +248,10 @@ def _anycast_prefixes(raw, own, blocks, errors):
             continue
         if own_nets and not any(net.version == o.version and net.subnet_of(o) for o in own_nets):
             errors.append("anycast prefix %s is not inside our own prefixes" % net)
+            continue
+        re_clash = [r["prefix"] for r in reassigned if r["family"] == net.version and net.overlaps(ipaddress.ip_network(r["prefix"]))]
+        if re_clash:
+            errors.append("anycast prefix %s overlaps reassigned prefix %s" % (net, re_clash[0]))
             continue
         clash = [str(b) for b in blocks if net.version == 6 and net.overlaps(b)]
         if clash:
@@ -437,7 +457,7 @@ def _peers(devs, errors):
     return peers
 
 
-def _plan_v6_blocks(devs, own6, errors):
+def _plan_v6_blocks(devs, own6, errors, reassigned=()):
     """Give each device its /48 and the management /64 (the first /64 of that /48).
 
     A router's management address is <first /64>::1. Other VMs that sit in the same IX take an
@@ -466,6 +486,10 @@ def _plan_v6_blocks(devs, own6, errors):
             continue
         if own_nets and not any(net.subnet_of(o) for o in own_nets if o.version == 6):
             errors.append("%s: ipv6_block %s is not inside the own IPv6 prefixes (OWN-V6)" % (n, net))
+            continue
+        bad = [r["prefix"] for r in reassigned if r["family"] == 6 and net.overlaps(ipaddress.ip_network(r["prefix"]))]
+        if bad:
+            errors.append("%s: ipv6_block %s overlaps reassigned prefix %s" % (n, net, bad[0]))
             continue
         for other, onet in blocks.items():
             if net.overlaps(onet):
@@ -543,8 +567,10 @@ def build_model(raw, cfg=None):
 
     lists = _collect_prefix_lists(raw, errors)
     own = _own_prefixes(raw, cfg, lists, errors)
+    reassigned = [e for e in lists.get(cfg["reassigned_prefix_list"], [])]
+    _check_reassigned(own, reassigned, errors)
     peers = _peers(devs, errors)
-    _plan_v6_blocks(devs, own["6"], errors)
+    _plan_v6_blocks(devs, own["6"], errors, reassigned)
 
     sessions = {}
     for s in raw.get("sessions") or []:
@@ -566,7 +592,7 @@ def build_model(raw, cfg=None):
 
     # Every device's /48 counts as our own space on every router (so a transit hub may pass an IX
     # router's /48 on) but only the device that owns it originates it.
-    anycast = _anycast_prefixes(raw, own, [ipaddress.ip_network(d['v6_block']) for d in devs.values() if d['v6_block']], errors)
+    anycast = _anycast_prefixes(raw, own, [ipaddress.ip_network(d['v6_block']) for d in devs.values() if d['v6_block']], errors, reassigned)
     block_entries = [
         {"prefix": d["v6_block"], "family": 6, "len": 48, "ge": None, "le": None}
         for _, d in sorted(devs.items()) if d["v6_block"]
@@ -616,6 +642,8 @@ def build_model(raw, cfg=None):
             "originate": _bool(want_originate) and is_router,
             "own_v4": own["4"],
             "own_v6": own["6"],
+            "reassigned_v4": [e for e in reassigned if e["family"] == 4],
+            "reassigned_v6": [e for e in reassigned if e["family"] == 6],
             "block_entries": block_entries,
             "originate_block": d["v6_block"] if is_router else None,
             "anycast_all_v4": [e for e in anycast if e["family"] == 4],

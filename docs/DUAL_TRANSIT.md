@@ -120,3 +120,26 @@ alone), raw GRE between the Vultr and NL public addresses, the Vultr BGP specifi
 ## Tests
 
 `tests/run_tests.sh` (unit, render, BIRD filter behaviour, Ansible flow against `tests/mock_netbox.py`).
+
+## Own address space and reassigned blocks
+
+- IPv4: `44.32.199.0/24`. IPv6: `2602:fa86::/36`. Put both in the NetBox prefix lists `OWN-V4` / `OWN-V6`
+  (OWN-V6 with `le 48`).
+- Space inside the /36 that belongs to someone else goes in a NetBox prefix list named `REASSIGNED`
+  (setting `reassigned_prefix_list`). The model refuses to use it for a VM `ipv6_block` or an anycast prefix,
+  and routers stop treating it as own space, so a route for it from its real holder is not dropped as "our space".
+- Enter the reassigned block as `2602:fa86:ffe::/48`. The request said `fife`, which is not valid hex, so this
+  is assumed to be `ffe` and needs your confirmation.
+- The primary still originates the /36 aggregate as a static blackhole. Make sure the friend's /48 reaches
+  its holder (they announce it themselves, or you route it), otherwise the aggregate will swallow its traffic.
+
+## Findings from the account lookups
+
+- Vultr (read-only connector): only two instances exist, both in `ord` (Chicago): `vpn.as40064.org`
+  (2 vCPU / 4 GB, 45.63.74.51) and `bgp2.as40064.org` (1 vCPU / 1 GB, 104.207.142.187). The larger one is
+  `vpn.as40064.org`. Their labels use as40064.org, not AS17290; confirm that is the box meant to be the primary.
+- bgpv6.com lists AS17290 upstreams AS20473 and AS205941 (shown as LSG, country RO, not NL), and 11 IXPs: Amateur IX
+  (Ashland), EVIX (Fremont), F4IX MCI (Kansas City), ixFabric Chicago / Kansas / Frankfurt / London,
+  NEO-IX (Akron), ONIX (Toronto), BEE-IX (Lviv), INTERIX (Amsterdam).
+- as205941.org/communities names informational, action and relationship categories in standard and large format
+  but publishes no values on that page, so no AS205941 community is encoded yet.
