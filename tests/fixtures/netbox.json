@@ -128,19 +128,99 @@
    }
   }
  ],
- "sessions": [
+ "routers": [
   {
    "id": 1,
-   "name": "vultr-v4",
+   "name": "vultr-transit-bgp",
    "device": {
     "id": 0,
     "name": "vultr-transit"
    },
-   "local_address": {
-    "address": "203.0.113.10/32"
+   "asn": {
+    "asn": 17290
+   }
+  },
+  {
+   "id": 2,
+   "name": "nl-transit-bgp",
+   "device": {
+    "id": 0,
+    "name": "nl-transit"
    },
-   "remote_address": {
+   "asn": {
+    "asn": 17290
+   }
+  },
+  {
+   "id": 3,
+   "name": "vultr-ix1-bgp",
+   "device": {
+    "id": 0,
+    "name": "vultr-ix1"
+   },
+   "asn": {
+    "asn": 17290
+   }
+  },
+  {
+   "id": 4,
+   "name": "nl-ix1-bgp",
+   "device": {
+    "id": 0,
+    "name": "nl-ix1"
+   },
+   "asn": {
+    "asn": 17290
+   }
+  }
+ ],
+ "scopes": [
+  {
+   "id": 1,
+   "display": "vultr-transit global",
+   "router": {
+    "id": 1
+   },
+   "vrf": null
+  },
+  {
+   "id": 2,
+   "display": "nl-transit global",
+   "router": {
+    "id": 2
+   },
+   "vrf": null
+  },
+  {
+   "id": 3,
+   "display": "vultr-ix1 global",
+   "router": {
+    "id": 3
+   },
+   "vrf": null
+  },
+  {
+   "id": 4,
+   "display": "nl-ix1 global",
+   "router": {
+    "id": 4
+   },
+   "vrf": null
+  }
+ ],
+ "peers": [
+  {
+   "id": 1,
+   "name": "vultr-v4",
+   "display": "vultr-v4",
+   "scope": {
+    "id": 1
+   },
+   "peer": {
     "address": "169.254.169.254/32"
+   },
+   "source": {
+    "address": "203.0.113.10/32"
    },
    "local_as": {
     "asn": 17290
@@ -152,10 +232,11 @@
    "status": {
     "value": "active"
    },
+   "password": "vultrSecret1",
+   "ttl": 2,
+   "bfd": null,
    "custom_fields": {
     "session_class": "transit",
-    "bgp_password": "vultrSecret1",
-    "multihop_ttl": 2,
     "allow_private_as": true,
     "neighbor_interface": "enp1s0"
    }
@@ -163,15 +244,15 @@
   {
    "id": 2,
    "name": "vultr-v6",
-   "device": {
-    "id": 0,
-    "name": "vultr-transit"
+   "display": "vultr-v6",
+   "scope": {
+    "id": 1
    },
-   "local_address": {
-    "address": "2001:db8:10::10/128"
-   },
-   "remote_address": {
+   "peer": {
     "address": "2001:19f0:ffff::1/128"
+   },
+   "source": {
+    "address": "2001:db8:10::10/128"
    },
    "local_as": {
     "asn": 17290
@@ -183,25 +264,26 @@
    "status": {
     "value": "active"
    },
+   "password": "vultrSecret1",
+   "ttl": 2,
+   "bfd": null,
    "custom_fields": {
     "session_class": "transit",
-    "bgp_password": "vultrSecret1",
-    "multihop_ttl": 2,
     "allow_private_as": true
    }
   },
   {
    "id": 3,
    "name": "nl-v4",
-   "device": {
-    "id": 0,
-    "name": "nl-transit"
+   "display": "nl-v4",
+   "scope": {
+    "id": 2
    },
-   "local_address": {
-    "address": "198.51.100.2/32"
-   },
-   "remote_address": {
+   "peer": {
     "address": "198.51.100.1/32"
+   },
+   "source": {
+    "address": "198.51.100.2/32"
    },
    "local_as": {
     "asn": 17290
@@ -213,24 +295,26 @@
    "status": {
     "value": "active"
    },
+   "password": "nlSecret1",
+   "ttl": null,
+   "bfd": null,
    "custom_fields": {
     "session_class": "transit",
-    "export_prepend": 3,
-    "bgp_password": "nlSecret1"
+    "export_prepend": 3
    }
   },
   {
    "id": 4,
    "name": "nl-v6",
-   "device": {
-    "id": 0,
-    "name": "nl-transit"
+   "display": "nl-v6",
+   "scope": {
+    "id": 2
    },
-   "local_address": {
-    "address": "2001:db8:100::2/128"
-   },
-   "remote_address": {
+   "peer": {
     "address": "2001:db8:100::1/128"
+   },
+   "source": {
+    "address": "2001:db8:100::2/128"
    },
    "local_as": {
     "asn": 17290
@@ -242,24 +326,26 @@
    "status": {
     "value": "active"
    },
+   "password": "nlSecret1",
+   "ttl": null,
+   "bfd": null,
    "custom_fields": {
     "session_class": "transit",
-    "export_prepend": 3,
-    "bgp_password": "nlSecret1"
+    "export_prepend": 3
    }
   },
   {
    "id": 5,
    "name": "ix1-rs1-v4",
-   "device": {
-    "id": 0,
-    "name": "vultr-ix1"
+   "display": "ix1-rs1-v4",
+   "scope": {
+    "id": 3
    },
-   "local_address": {
-    "address": "192.0.2.10/32"
-   },
-   "remote_address": {
+   "peer": {
     "address": "192.0.2.1/32"
+   },
+   "source": {
+    "address": "192.0.2.10/32"
    },
    "local_as": {
     "asn": 17290
@@ -271,6 +357,9 @@
    "status": {
     "value": "active"
    },
+   "password": null,
+   "ttl": null,
+   "bfd": null,
    "custom_fields": {
     "session_class": "ix-rs",
     "max_prefix": 150000
@@ -279,15 +368,15 @@
   {
    "id": 6,
    "name": "ix1-rs1-v6",
-   "device": {
-    "id": 0,
-    "name": "vultr-ix1"
+   "display": "ix1-rs1-v6",
+   "scope": {
+    "id": 3
    },
-   "local_address": {
-    "address": "2001:db8:ffff::10/128"
-   },
-   "remote_address": {
+   "peer": {
     "address": "2001:db8:ffff::1/128"
+   },
+   "source": {
+    "address": "2001:db8:ffff::10/128"
    },
    "local_as": {
     "asn": 17290
@@ -299,6 +388,9 @@
    "status": {
     "value": "active"
    },
+   "password": null,
+   "ttl": null,
+   "bfd": null,
    "custom_fields": {
     "session_class": "ix-rs",
     "max_prefix": 60000
@@ -307,15 +399,15 @@
   {
    "id": 7,
    "name": "ix1-peer-v4",
-   "device": {
-    "id": 0,
-    "name": "vultr-ix1"
+   "display": "ix1-peer-v4",
+   "scope": {
+    "id": 3
    },
-   "local_address": {
-    "address": "192.0.2.10/32"
-   },
-   "remote_address": {
+   "peer": {
     "address": "192.0.2.77/32"
+   },
+   "source": {
+    "address": "192.0.2.10/32"
    },
    "local_as": {
     "asn": 17290
@@ -327,6 +419,9 @@
    "status": {
     "value": "active"
    },
+   "password": null,
+   "ttl": null,
+   "bfd": null,
    "custom_fields": {
     "session_class": "ix-bilateral",
     "irr_as_set": "AS-EXAMPLE",
@@ -336,15 +431,15 @@
   {
    "id": 8,
    "name": "ix1-planned",
-   "device": {
-    "id": 0,
-    "name": "vultr-ix1"
+   "display": "ix1-planned",
+   "scope": {
+    "id": 3
    },
-   "local_address": {
-    "address": "192.0.2.10/32"
-   },
-   "remote_address": {
+   "peer": {
     "address": "192.0.2.88/32"
+   },
+   "source": {
+    "address": "192.0.2.10/32"
    },
    "local_as": {
     "asn": 17290
@@ -356,6 +451,9 @@
    "status": {
     "value": "planned"
    },
+   "password": null,
+   "ttl": null,
+   "bfd": null,
    "custom_fields": {
     "session_class": "ix-bilateral"
    }
@@ -363,15 +461,15 @@
   {
    "id": 9,
    "name": "nlix-rs1-v4",
-   "device": {
-    "id": 0,
-    "name": "nl-ix1"
+   "display": "nlix-rs1-v4",
+   "scope": {
+    "id": 4
    },
-   "local_address": {
-    "address": "203.0.113.200/32"
-   },
-   "remote_address": {
+   "peer": {
     "address": "203.0.113.1/32"
+   },
+   "source": {
+    "address": "203.0.113.200/32"
    },
    "local_as": {
     "asn": 17290
@@ -383,6 +481,9 @@
    "status": {
     "value": "active"
    },
+   "password": null,
+   "ttl": null,
+   "bfd": null,
    "custom_fields": {
     "session_class": "ix-rs"
    }
@@ -404,46 +505,53 @@
    }
   }
  ],
- "prefix_list_rules": [
+ "prefix_list_entries": [
   {
    "id": 1,
-   "index": 10,
-   "action": "permit",
    "prefix_list": {
     "id": 1,
     "name": "OWN-V4"
    },
-   "prefix": null,
-   "prefix_custom": "192.0.2.0/24",
+   "sequence": 10,
+   "action": "permit",
+   "assigned_prefix": {
+    "prefix": "192.0.2.0/24"
+   },
+   "assigned_prefix_type": "ipam.prefix",
    "ge": null,
    "le": null
   },
   {
    "id": 2,
-   "index": 20,
-   "action": "permit",
    "prefix_list": {
     "id": 1,
     "name": "OWN-V4"
    },
-   "prefix": null,
-   "prefix_custom": "198.18.0.0/22",
+   "sequence": 20,
+   "action": "permit",
+   "assigned_prefix": {
+    "prefix": "198.18.0.0/22"
+   },
+   "assigned_prefix_type": "ipam.prefix",
    "ge": 22,
    "le": 24
   },
   {
    "id": 3,
-   "index": 10,
-   "action": "permit",
    "prefix_list": {
     "id": 2,
     "name": "OWN-V6"
    },
-   "prefix": null,
-   "prefix_custom": "2001:db8:5000::/36",
+   "sequence": 10,
+   "action": "permit",
+   "assigned_prefix": {
+    "prefix": "2001:db8:5000::/36"
+   },
+   "assigned_prefix_type": "ipam.prefix",
    "ge": null,
    "le": 48
   }
  ],
- "tagged_prefixes": []
+ "tagged_prefixes": [],
+ "anycast_prefixes": []
 }

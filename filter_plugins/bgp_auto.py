@@ -26,7 +26,10 @@ ROLE_MON = "monitoring"
 ROUTER_ROLES = (ROLE_TRANSIT, ROLE_IX)
 MANAGED_ROLES = (ROLE_TRANSIT, ROLE_IX, ROLE_MON)
 
-SESSION_CLASSES = ("transit", "ix-rs", "ix-bilateral", "customer")
+# "collector" is a route collector / looking glass feed (RouteViews, RIS): we export
+# everything we have learned and accept nothing back. It is the only class that exports
+# more than our own prefixes, so it is never inferred -- it must be set explicitly.
+SESSION_CLASSES = ("transit", "ix-rs", "ix-bilateral", "customer", "collector")
 
 DEFAULT_POLICY = {
     "own_asn": 17290,
@@ -36,24 +39,28 @@ DEFAULT_POLICY = {
     "own_prefix_tag": "bgp-originate",
     # Prefix list of space inside our aggregates that is reassigned to someone else (e.g. a friend's /48).
     # Never originated, never treated as own space, never usable for a VM /48 or anycast.
-    "reassigned_prefix_list": "REASSIGNED",
+    # netbox-routing puts the address family on the prefix list, not on its entries, so
+    # reassigned space needs one list per family just like own space does.
+    "reassigned_prefix_lists": {"4": "REASSIGNED-V4", "6": "REASSIGNED-V6"},
     "device_statuses": ["active"],
-    "local_pref": {"customer": 300, "ix-bilateral": 220, "ix-rs": 200, "transit": 100},
+    "local_pref": {"customer": 300, "ix-bilateral": 220, "ix-rs": 200, "transit": 100, "collector": 100},
     "max_prefix": {
         "transit": {"4": 1400000, "6": 400000},
         "ix-rs": {"4": 250000, "6": 100000},
         "ix-bilateral": {"4": 5000, "6": 5000},
         "customer": {"4": 1000, "6": 1000},
+        "collector": {"4": 0, "6": 0},   # accepts nothing, so no limit is meaningful
     },
     "max_prefix_action": {
         "transit": "restart",
         "ix-rs": "disable",
         "ix-bilateral": "disable",
         "customer": "disable",
+        "collector": "disable",
     },
-    "enforce_first_as": {"transit": False, "ix-rs": False, "ix-bilateral": True, "customer": True},
-    "irr_filter": {"transit": False, "ix-rs": False, "ix-bilateral": True, "customer": True},
-    "export_prepend": {"transit": 0, "ix-rs": 0, "ix-bilateral": 0, "customer": 0},
+    "enforce_first_as": {"transit": False, "ix-rs": False, "ix-bilateral": True, "customer": True, "collector": False},
+    "irr_filter": {"transit": False, "ix-rs": False, "ix-bilateral": True, "customer": True, "collector": False},
+    "export_prepend": {"transit": 0, "ix-rs": 0, "ix-bilateral": 0, "customer": 0, "collector": 0},
     "ibgp_bfd": False,
     "bfd_interval_ms": 1000,
     "bfd_multiplier": 5,
@@ -419,7 +426,7 @@ def _session_view(s, cfg, errors, lists):
 
 def _unique_names(sessions):
     seen = {}
-    prefix = {"transit": "tr", "ix-rs": "rs", "ix-bilateral": "bi", "customer": "cu"}
+    prefix = {"transit": "tr", "ix-rs": "rs", "ix-bilateral": "bi", "customer": "cu", "collector": "co"}
     for s in sessions:
         base = "%s_%s" % (prefix[s["class"]], _ident(s["label"]))
         n = seen.get(base, 0)
@@ -533,7 +540,82 @@ def _plan_v6_blocks(devs, own6, errors, reassigned=()):
         pd["mgmt_members"].append({"name": n, "addr": str(addr)})
 
 
+# ------------------------------------------------- netbox-routing adaptation
+
+
+def _ref_id(ref):
+    """id out of a nested object, a bare id, or None."""
+    if isinstance(ref, dict):
+        return ref.get("id")
+    return ref
+
+
+def _router_device(router):
+    """A BGPRouter is bound either through `device` or through the generic assigned_object."""
+    for key in ("device", "assigned_object"):
+        obj = router.get(key)
+        if isinstance(obj, dict) and obj.get("name"):
+            return obj["name"]
+    return None
+
+
+def _adapt_netbox_routing(raw):
+    """Reshape netbox-routing objects into the flat form the rest of this module reads.
+
+    netbox-routing replaced the netbox-bgp plugin. A BGPPeer keeps its device two hops
+    away (peer -> scope -> router -> device) and holds natively several things that
+    netbox-bgp needed custom fields for, and a PrefixListEntry points at an IPAM prefix
+    or a CustomPrefix instead of carrying one. Nothing else in this module needs to know.
+    """
+    if "peers" not in raw and "prefix_list_entries" not in raw:
+        return raw
+    out = dict(raw)
+    routers = {r.get("id"): r for r in raw.get("routers") or []}
+    scopes = {s.get("id"): s for s in raw.get("scopes") or []}
+
+    sessions = []
+    for peer in raw.get("peers") or []:
+        scope = scopes.get(_ref_id(peer.get("scope"))) or {}
+        router = routers.get(_ref_id(scope.get("router"))) or {}
+        cf = dict(peer.get("custom_fields") or {})
+        # Natives that used to be custom fields. setdefault leaves an explicit custom
+        # field as an override, so a half-migrated NetBox still renders.
+        if peer.get("ttl") is not None:
+            cf.setdefault("multihop_ttl", peer["ttl"])
+        if peer.get("bfd") is not None:
+            cf.setdefault("bfd", bool(peer["bfd"]))
+        sessions.append({
+            "id": peer.get("id"),
+            "name": peer.get("name") or peer.get("display"),
+            "device": {"name": _router_device(router)},
+            "remote_address": peer.get("peer"),
+            "local_address": peer.get("source"),
+            "local_as": peer.get("local_as"),
+            "remote_as": peer.get("remote_as"),
+            "status": peer.get("status"),
+            "password": peer.get("password") or None,
+            "peer_group": peer.get("peer_group"),
+            "custom_fields": cf,
+        })
+    out["sessions"] = sessions
+
+    rules = []
+    for e in raw.get("prefix_list_entries") or []:
+        assigned = e.get("assigned_prefix")
+        rules.append({
+            "prefix_list": e.get("prefix_list"),
+            "index": e.get("sequence"),
+            "prefix": assigned.get("prefix") if isinstance(assigned, dict) else assigned,
+            "action": e.get("action"),
+            "ge": e.get("ge"),
+            "le": e.get("le"),
+        })
+    out["prefix_list_rules"] = rules
+    return out
+
+
 def build_model(raw, cfg=None):
+    raw = _adapt_netbox_routing(raw)
     cfg = _merge(DEFAULT_POLICY, cfg or {})
     errors = []
     devs = {}
@@ -567,7 +649,10 @@ def build_model(raw, cfg=None):
 
     lists = _collect_prefix_lists(raw, errors)
     own = _own_prefixes(raw, cfg, lists, errors)
-    reassigned = [e for e in lists.get(cfg["reassigned_prefix_list"], [])]
+    reassigned = []
+    for fam in ("4", "6"):
+        name = cfg["reassigned_prefix_lists"].get(fam)
+        reassigned += [e for e in lists.get(name, []) if str(e["family"]) == fam]
     _check_reassigned(own, reassigned, errors)
     peers = _peers(devs, errors)
     _plan_v6_blocks(devs, own["6"], errors, reassigned)

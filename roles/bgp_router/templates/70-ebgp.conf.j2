@@ -19,7 +19,21 @@ protocol static static_nbr{{ fam }} {
 {% endif %}
 {% endfor %}
 {% for s in node.sessions %}
-{% set lc = {'transit': 'LC_FROM_TRANSIT', 'ix-rs': 'LC_FROM_IX_RS', 'ix-bilateral': 'LC_FROM_IX_BILATERAL', 'customer': 'LC_FROM_CUSTOMER'}[s.class] %}
+{% set lc = {'transit': 'LC_FROM_TRANSIT', 'ix-rs': 'LC_FROM_IX_RS', 'ix-bilateral': 'LC_FROM_IX_BILATERAL', 'customer': 'LC_FROM_CUSTOMER', 'collector': 'LC_FROM_TRANSIT'}[s.class] %}
+{% if s.class == 'collector' %}
+
+# Route collector (RouteViews / RIS): send the whole view, accept nothing back.
+filter IMP_{{ s.pname }} {
+    reject;
+}
+
+filter EXP_{{ s.pname }} {
+    if !collector_export_ok() then reject;
+    # Keep our internal communities inside the AS.
+    bgp_large_community.delete([(OWN_AS, *, *)]);
+    accept;
+}
+{% else %}
 
 filter IMP_{{ s.pname }} {
     # Only we may set communities with our own ASN.
@@ -86,6 +100,7 @@ filter EXP_{{ s.pname }} {
     bgp_large_community.delete([(OWN_AS, *, *)]);
     accept;
 }
+{% endif %}
 
 protocol bgp {{ s.pname }} {
     description "{{ s.label }} AS{{ s.remote_as }} ({{ s.class }}{{ ', ' ~ s.peer_group if s.peer_group else '' }})";
@@ -109,10 +124,18 @@ protocol bgp {{ s.pname }} {
     bfd on;
 {% endif %}
     ipv{{ s.family }} {
+{% if s.class == 'collector' %}
+        # Nothing is accepted from a collector, so keeping the filtered routes would
+        # hold a full table in memory for no reason, and a receive limit would trip
+        # on the first update.
+        import filter IMP_{{ s.pname }};
+        export filter EXP_{{ s.pname }};
+{% else %}
         import keep filtered;
         import filter IMP_{{ s.pname }};
         export filter EXP_{{ s.pname }};
         receive limit {{ s.max_prefix }} action {{ s.max_prefix_action }};
+{% endif %}
     };
 }
 {% endfor %}

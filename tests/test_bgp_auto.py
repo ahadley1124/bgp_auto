@@ -78,7 +78,7 @@ class ValidationTests(unittest.TestCase):
 
     def test_bad_password_rejected(self):
         raw = json.loads(json.dumps(RAW))
-        raw["sessions"][0]["custom_fields"]["bgp_password"] = 'bad"pw'
+        raw["peers"][0]["password"] = 'bad"pw'
         self.assertTrue(any("password" in e for e in b.build_model(raw, {})["errors"]))
 
     def test_long_ifname(self):
@@ -88,7 +88,7 @@ class ValidationTests(unittest.TestCase):
 
     def test_tagged_prefix_fallback(self):
         raw = json.loads(json.dumps(RAW))
-        raw["prefix_lists"] = []; raw["prefix_list_rules"] = []
+        raw["prefix_lists"] = []; raw["prefix_list_entries"] = []
         raw["tagged_prefixes"] = [{"prefix": "192.0.2.0/24", "status": {"value": "active"}}]
         m = b.build_model(raw, {})
         self.assertEqual(m["own"]["4"][0]["prefix"], "192.0.2.0/24")
@@ -175,10 +175,11 @@ class V6BlockTests(unittest.TestCase):
         self.assertIn("overlapping", errs)
 
     def addReassigned(self, raw, prefix):
-        raw["prefix_lists"].append({"id": 9, "name": "REASSIGNED", "family": {"value": 6}})
-        raw["prefix_list_rules"].append({"id": 99, "index": 10, "action": "permit",
-            "prefix_list": {"id": 9, "name": "REASSIGNED"}, "prefix": None,
-            "prefix_custom": prefix, "ge": None, "le": None})
+        # netbox-routing keys the family on the list, so reassigned space is split by family.
+        raw["prefix_lists"].append({"id": 9, "name": "REASSIGNED-V6", "family": {"value": 6}})
+        raw["prefix_list_entries"].append({"id": 99, "sequence": 10, "action": "permit",
+            "prefix_list": {"id": 9, "name": "REASSIGNED-V6"},
+            "assigned_prefix": {"prefix": prefix}, "ge": None, "le": None})
 
     def test_reassigned_prefix_is_excluded(self):
         raw = self.raw()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Talk to NetBox (and the netbox_bgp plugin) for bgp_auto. Standard library only.
+"""Talk to NetBox (and the netbox-routing plugin) for bgp_auto. Standard library only.
 
   netbox_fetch.py fetch   > raw.json         everything build_model needs
   netbox_fetch.py probe                      check each endpoint and show custom field names
@@ -8,8 +8,12 @@
 Environment: NETBOX_URL, NETBOX_TOKEN. Optional NETBOX_VERIFY=0 to skip TLS verification
 (never do this over the internet), NETBOX_ENDPOINTS=<json> to override endpoint paths.
 
-The plugin endpoint paths below are the usual netbox_bgp ones but have not been checked
-against every plugin release: run `probe` after upgrading NetBox or the plugin.
+Sessions come from netbox-routing (`BGPPeer`), which replaced the netbox-bgp plugin.
+This script only fetches; filter_plugins/bgp_auto.py reshapes those objects into the
+model (see _adapt_netbox_routing there). Note that
+`/api/plugins/bgp/` still resolves on a NetBox with netbox-peering-manager installed,
+but that is a different plugin with a different layout: its presence does not mean
+netbox-bgp is there. Run `probe` after upgrading NetBox or the plugins.
 """
 import json
 import os
@@ -21,13 +25,18 @@ import urllib.request
 
 ENDPOINTS = {
     "devices": "/api/dcim/devices/?role=transit-router&role=ix-router&role=monitoring",
-    "sessions": "/api/plugins/bgp/session/",
-    "prefix_lists": "/api/plugins/bgp/prefixlist/",
-    "prefix_list_rules": "/api/plugins/bgp/prefixlistrule/",
+    # netbox-routing. A BGPPeer points at a BGPScope, which points at a BGPRouter,
+    # which is the thing actually bound to a device -- so all three are needed to
+    # work out which router a session belongs to.
+    "peers": "/api/plugins/routing/bgp/peer/",
+    "scopes": "/api/plugins/routing/bgp/scope/",
+    "routers": "/api/plugins/routing/bgp/router/",
+    "prefix_lists": "/api/plugins/routing/objects/prefix-list/",
+    "prefix_list_entries": "/api/plugins/routing/objects/prefix-list-entry/",
     "tagged_prefixes": "/api/ipam/prefixes/?tag=bgp-originate",
     "anycast_prefixes": "/api/ipam/prefixes/?tag=bgp-anycast",
 }
-REQUIRED = ("devices", "sessions")
+REQUIRED = ("devices", "peers")
 
 
 class NetBox:
@@ -99,8 +108,8 @@ def cmd_probe(nb):
         try:
             rows = nb.all(path)
             print("ok    %-18s %4d rows  %s" % (key, len(rows), path))
-            if key == "sessions" and rows:
-                print("        session fields:", ", ".join(sorted(rows[0].keys())))
+            if key == "peers" and rows:
+                print("        peer fields   :", ", ".join(sorted(rows[0].keys())))
                 print("        custom fields :", ", ".join(sorted((rows[0].get("custom_fields") or {}).keys())))
         except SystemExit as e:
             print("FAIL  %-18s %s" % (key, e))

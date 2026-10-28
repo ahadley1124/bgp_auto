@@ -15,8 +15,12 @@ ap.add_argument("--page", type=int, default=2, help="page size, small on purpose
 a = ap.parse_args()
 with open(a.fixture) as f:
     DATA = json.load(f)
-ROUTES = {"/api/dcim/devices/": "devices", "/api/plugins/bgp/session/": "sessions",
-          "/api/plugins/bgp/prefixlist/": "prefix_lists", "/api/plugins/bgp/prefixlistrule/": "prefix_list_rules",
+ROUTES = {"/api/dcim/devices/": "devices",
+          "/api/plugins/routing/bgp/peer/": "peers",
+          "/api/plugins/routing/bgp/scope/": "scopes",
+          "/api/plugins/routing/bgp/router/": "routers",
+          "/api/plugins/routing/objects/prefix-list/": "prefix_lists",
+          "/api/plugins/routing/objects/prefix-list-entry/": "prefix_list_entries",
           "/api/ipam/prefixes/": "tagged_prefixes"}
 
 

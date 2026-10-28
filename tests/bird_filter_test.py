@@ -13,9 +13,9 @@ import bgp_auto as b
 
 raw = json.load(open(os.path.join(HERE, "fixtures", "netbox.json")))
 # Use a non-bogon own prefix so the "own space" rule can be tested separately from bogons.
-raw["prefix_list_rules"][0]["prefix_custom"] = "45.200.0.0/22"
-raw["prefix_list_rules"][0]["ge"] = None; raw["prefix_list_rules"][0]["le"] = None
-raw["prefix_list_rules"][1]["prefix_custom"] = "45.201.0.0/22"
+raw["prefix_list_entries"][0]["assigned_prefix"] = {"prefix": "45.200.0.0/22"}
+raw["prefix_list_entries"][0]["ge"] = None; raw["prefix_list_entries"][0]["le"] = None
+raw["prefix_list_entries"][1]["assigned_prefix"] = {"prefix": "45.201.0.0/22"}
 tmp = tempfile.mkdtemp(prefix="birdtest")
 subprocess.check_call([sys.executable, os.path.join(HERE, "render_bird.py"), tmp, "--irr-json", os.path.join(HERE, "fixtures", "irr.json")]
                       , env=dict(os.environ)) if False else None

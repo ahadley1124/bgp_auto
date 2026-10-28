@@ -149,7 +149,7 @@ class NetboxFetchTests(unittest.TestCase):
         got = json.loads(p.stdout)
         want = json.load(open(os.path.join(HERE, "fixtures", "netbox.json")))
         self.assertEqual(len(got["devices"]), len(want["devices"]))
-        self.assertEqual(len(got["sessions"]), len(want["sessions"]))
+        self.assertEqual(len(got["peers"]), len(want["peers"]))
     def test_bad_token(self):
         p = self.run_script("fetch", env=dict(self.env, NETBOX_TOKEN="nope")); self.assertNotEqual(p.returncode, 0)
     def test_set_cf_idempotent(self):
@@ -201,7 +201,7 @@ class AnycastRenderTests(unittest.TestCase):
         for dev in raw["devices"]:
             if dev["name"] in ("vultr-transit", "nl-transit"):
                 dev["custom_fields"]["anycast_originate"] = True
-        for s in raw["sessions"]:
+        for s in raw["peers"]:
             if s["name"] == "vultr-v6":
                 s["custom_fields"].update(anycast_prepend=2, anycast_communities="20473:6001:3356, 64601:3356")
         fx = os.path.join(d, "fx.json"); json.dump(raw, open(fx, "w")); return fx
@@ -234,7 +234,7 @@ class AnycastRenderTests(unittest.TestCase):
         import bgp_auto as b
         raw = json.load(open(os.path.join(HERE, "fixtures", "netbox.json")))
         raw["anycast_prefixes"] = [{"prefix": "2001:db8:ffff::/46"}, {"prefix": "2001:db8:5008::/52"}]
-        for s in raw["sessions"]:
+        for s in raw["peers"]:
             if s["name"] == "vultr-v6":
                 s["custom_fields"].update(anycast_communities="not-a-community")
         errs = " | ".join(b.build_model(raw, {})["errors"])
@@ -310,3 +310,48 @@ class AnycastWatchTests(unittest.TestCase):
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertIn("SUGGESTION", p.stdout)
             self.assertTrue(os.path.exists(os.path.join(d, "o", "anycast.prom")))
+
+
+class CollectorRenderTests(unittest.TestCase):
+    """A route collector (RouteViews / RIS) is the one class that exports the whole view."""
+    def fixture(self, d):
+        raw = json.load(open(os.path.join(HERE, "fixtures", "netbox.json")))
+        tmpl = raw["peers"][0]
+        raw["peers"].append({
+            "id": 900, "name": "routeviews-v4", "display": "routeviews-v4",
+            "scope": tmpl["scope"],
+            "peer": {"address": "128.223.51.16/32"},
+            "source": None,
+            "local_as": {"asn": 17290}, "remote_as": {"asn": 6447},
+            "peer_group": None, "status": {"value": "active"},
+            "password": None, "ttl": None, "bfd": None,
+            "custom_fields": {"session_class": "collector"},
+        })
+        fx = os.path.join(d, "fx.json"); json.dump(raw, open(fx, "w")); return fx
+
+    def test_collector_exports_full_view(self):
+        if not __import__("shutil").which("bird"):
+            self.skipTest("needs bird")
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "out")
+            subprocess.check_call([sys.executable, os.path.join(HERE, "render_bird.py"), out,
+                                   "--fixture", self.fixture(d),
+                                   "--irr-json", os.path.join(HERE, "fixtures", "irr.json")],
+                                  stdout=subprocess.DEVNULL)
+            ebgp = open(os.path.join(out, "vultr-transit", "generated", "70-ebgp.conf")).read()
+            # Compare against config only -- the comments mention these keywords on purpose.
+            code = "\n".join(l for l in ebgp.splitlines() if not l.lstrip().startswith("#"))
+            block = code[code.index("filter IMP_co_routeviews_v4"):]
+            proto = block[block.index("protocol bgp co_routeviews_v4"):].split("\n}", 1)[0]
+            self.assertIn("collector_export_ok()", block, "collector must use the full-view export")
+            self.assertNotIn("receive limit", proto, "a receive limit would trip on the first update")
+            self.assertNotIn("import keep filtered", proto,
+                             "keeping filtered routes would hold a full table for nothing")
+            # the transit session alongside it must keep both
+            tr = code[code.index("protocol bgp tr_vultr_v4"):]
+            self.assertIn("receive limit", tr)
+            self.assertIn("import keep filtered", tr)
+            # and the whole config must still parse
+            p = subprocess.run(["bird", "-p", "-c", os.path.join(out, "vultr-transit", "bird.conf")],
+                               capture_output=True, text=True, cwd="/")
+            self.assertEqual(p.returncode, 0, p.stderr)

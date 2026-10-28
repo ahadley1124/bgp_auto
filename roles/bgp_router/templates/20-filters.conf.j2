@@ -81,6 +81,18 @@ function export_ok() -> bool {
     return true;
 }
 
+# Route collectors (RouteViews, RIS) get the whole view instead: everything we learned
+# over BGP plus our own originations. This is the one export that leaves the AS with
+# routes we did not originate, so it is only ever reached from a "collector" session.
+function collector_export_ok() -> bool {
+    if net.len = 0 then return false;
+    if is_bogon_prefix() then return false;
+    if (OWN_AS, 666) ~ bgp_community then return false;
+    if is_own_announcement() then return true;
+    if source = RTS_BGP then return true;
+    return false;
+}
+
 filter kernel_export4 {
     if bgp_large_community ~ [LC_NEIGHBOR_ROUTE] then reject;
     if net ~ [169.254.0.0/16+, 100.64.0.0/10+] then reject;

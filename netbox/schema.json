@@ -134,102 +134,84 @@
       "label": "SSH user"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "session_class",
       "type": "select",
       "choices": [
         "transit",
         "ix-rs",
         "ix-bilateral",
-        "customer"
+        "customer",
+        "collector"
       ],
       "label": "Session class"
     },
     {
-      "object": "netbox_bgp.bgpsession",
-      "name": "bgp_password",
-      "type": "text",
-      "label": "BGP password",
-      "description": "Only if the plugin has no password field"
-    },
-    {
-      "object": "netbox_bgp.bgpsession",
-      "name": "multihop_ttl",
-      "type": "integer",
-      "label": "Multihop TTL"
-    },
-    {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "max_prefix",
       "type": "integer",
       "label": "Max prefixes",
       "description": "Overrides the class default"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "irr_as_set",
       "type": "text",
       "label": "IRR as-set",
       "description": "Default: AS<remote asn>"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "irr_filter",
       "type": "boolean",
       "label": "IRR prefix filter"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "local_pref",
       "type": "integer",
       "label": "Local preference"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "export_prepend",
       "type": "integer",
       "label": "Export prepends"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "enforce_first_as",
       "type": "boolean",
       "label": "Enforce first AS"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "allow_private_as",
       "type": "boolean",
       "label": "Allow private ASNs in paths",
       "description": "Needed for the Vultr session (AS64515)"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "accept_default",
       "type": "boolean",
       "label": "Accept default route"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "graceful_shutdown",
       "type": "boolean",
       "label": "Send graceful shutdown"
     },
     {
-      "object": "netbox_bgp.bgpsession",
-      "name": "bfd",
-      "type": "boolean",
-      "label": "BFD"
-    },
-    {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "neighbor_interface",
       "type": "text",
       "label": "Neighbor interface",
       "description": "Adds a static route to the neighbor via this interface (Vultr link-local style neighbors)"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "import_prefix_list",
       "type": "text",
       "label": "Static import prefix list",
@@ -243,21 +225,21 @@
       "description": "Router announces every IPAM prefix tagged bgp-anycast (set on both transits)"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "anycast_prepend",
       "type": "integer",
       "label": "Anycast prepends",
       "description": "Extra prepends on anycast prefixes only, 0-5"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "anycast_communities",
       "type": "text",
       "label": "Anycast communities",
       "description": "Comma separated standard (a:b) or large (a:b:c) communities added to anycast prefixes only, e.g. 20473:6001:3356"
     },
     {
-      "object": "netbox_bgp.bgpsession",
+      "object": "netbox_routing.bgppeer",
       "name": "path_asn",
       "type": "integer",
       "label": "AS seen in paths",
