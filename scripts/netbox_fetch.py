@@ -41,6 +41,9 @@ class NetBox:
         req = urllib.request.Request(url, method=method, data=json.dumps(body).encode() if body is not None else None)
         req.add_header("Authorization", "Token " + self.token)
         req.add_header("Accept", "application/json")
+        # urllib's default User-Agent (Python-urllib/3.x) is rejected outright by the
+        # Cloudflare in front of some NetBox installs (error 1010), so send our own.
+        req.add_header("User-Agent", os.environ.get("NETBOX_USER_AGENT", "bgp_auto/1.0"))
         if body is not None:
             req.add_header("Content-Type", "application/json")
         try:
