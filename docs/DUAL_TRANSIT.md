@@ -80,6 +80,11 @@ Large communities: `17290:1000:1..5` origin class, `:2000:<device id>`, `:1100:1
 
 * **IX peer**: add a netbox_bgp session on the IX router device, set `session_class` to `ix-rs` or
   `ix-bilateral`, put the password in the session. Merge/run the playbook.
+* **Session class on netbox-routing 0.5.1**: that version's BGPPeer API drops custom fields, so a
+  peer cannot carry `session_class` (or any other session custom field) through the API. Until the
+  plugin is fixed, classify by remote AS in `group_vars/all.yml`: transits go in
+  `bgp_policy.transit_asns`, everything else in `bgp_policy.session_class_asns` (`collector`,
+  `ix-rs`, `customer`, ...). A class set on the session itself still wins.
 * **Disable a session**: set its status to anything but `active`.
 * **New router**: create the device with role `transit-router` / `ix-router`, a primary IP, `loopback_ip`,
   `hub`, `short_name`. Device ids must be below 128 (tunnel addressing).

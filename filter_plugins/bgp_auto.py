@@ -34,6 +34,11 @@ SESSION_CLASSES = ("transit", "ix-rs", "ix-bilateral", "customer", "collector")
 DEFAULT_POLICY = {
     "own_asn": 17290,
     "transit_asns": [64515, 205941],
+    # Session class per remote ASN, for sessions whose NetBox object carries no session_class.
+    # netbox-routing 0.5.1's BGPPeer API drops custom fields (its serializer omits them), so on
+    # that version this is the only way to classify a session. It is explicit configuration,
+    # not inference, so it may name "collector". A session's own session_class still wins.
+    "session_class_asns": {},
     "path_asn_map": {64515: 20473},   # Vultr sessions are AS64515 but paths show AS20473
     "own_prefix_lists": {"4": "OWN-V4", "6": "OWN-V6"},
     "own_prefix_tag": "bgp-originate",
@@ -365,7 +370,8 @@ def _session_view(s, cfg, errors, lists):
         return None
     cls = _val(cf.get("session_class"))
     if not cls:
-        cls = "transit" if remote_as in cfg["transit_asns"] else "ix-bilateral"
+        by_asn = {int(k): v for k, v in (cfg.get("session_class_asns") or {}).items()}
+        cls = by_asn.get(remote_as) or ("transit" if remote_as in cfg["transit_asns"] else "ix-bilateral")
     if cls not in SESSION_CLASSES:
         errors.append("session %s: session_class %r not in %s" % (label, cls, SESSION_CLASSES))
         return None

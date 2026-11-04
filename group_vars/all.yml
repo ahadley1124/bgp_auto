@@ -9,3 +9,18 @@ netbox_url: "{{ vault_netbox_url }}"
 
 # When true, attempt GRE tunnel creation even if facts are missing.
 gre_force_create: false
+
+# Merged over DEFAULT_POLICY in filter_plugins/bgp_auto.py.
+bgp_policy:
+  # Every transit we take, by the remote AS the session sees (Vultr's sessions are AS64515).
+  transit_asns: [64515, 205941, 11967, 34927, 35661, 209735, 211358, 218995]
+  # Sessions on netbox-routing 0.5.1 cannot carry session_class (its BGPPeer API drops custom
+  # fields), so the classes that are not transit are named here per remote AS.
+  session_class_asns:
+    6447: collector     # RouteViews
+    212232: collector   # bgp.tools
+    214022: collector   # Virtnet.bond full feed
+    215248: collector   # Bastiaan Brink full feed
+    203023: ix-rs       # Kawaii IX route servers (nl-1)
+    24381: ix-rs        # BGP.Exchange / ixFabric route servers (vpn ixfabric netns)
+    219040: customer    # Breezenodes downstream
