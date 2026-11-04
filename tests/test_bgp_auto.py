@@ -141,6 +141,23 @@ class SessionClassByAsnTests(unittest.TestCase):
         self.assertTrue(any("nl-collector-v4" in e and "bogus" in e for e in m["errors"]), m["errors"])
 
 
+class OwnAsnSessionTests(unittest.TestCase):
+    """NetBox may record iBGP sessions; bgp_auto derives iBGP itself and must not render them."""
+
+    def test_own_asn_session_is_skipped_without_error(self):
+        raw = json.loads(json.dumps(RAW))
+        raw["peers"].append({
+            "id": 98, "name": "nl-ibgp-to-vultr", "display": "nl-ibgp-to-vultr", "scope": {"id": 2},
+            "peer": {"address": "10.255.255.1/32"}, "source": {"address": "10.255.255.2/32"},
+            "local_as": {"asn": 17290}, "remote_as": {"asn": 17290}, "peer_group": None,
+            "status": {"value": "active"}, "password": None, "ttl": None, "bfd": None, "custom_fields": {}})
+        m = b.build_model(raw, {})
+        self.assertEqual(m["errors"], [])
+        labels = [s["label"] for s in m["nodes"]["nl-transit"]["sessions"]]
+        self.assertNotIn("nl-ibgp-to-vultr", labels)
+        self.assertEqual(m, b.build_model(RAW, {}))
+
+
 if __name__ == "__main__":
     unittest.main()
 

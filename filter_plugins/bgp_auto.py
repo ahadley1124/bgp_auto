@@ -368,6 +368,10 @@ def _session_view(s, cfg, errors, lists):
     if remote_as is None:
         errors.append("session %s: no remote AS" % label)
         return None
+    if remote_as == cfg["own_asn"]:
+        # iBGP is built from the device list (_peers), never from NetBox sessions. NetBox may
+        # still record the live iBGP sessions; rendering them too would duplicate the mesh.
+        return None
     cls = _val(cf.get("session_class"))
     if not cls:
         by_asn = {int(k): v for k, v in (cfg.get("session_class_asns") or {}).items()}
